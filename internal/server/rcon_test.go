@@ -147,6 +147,27 @@ func TestRCONWrongPassword(t *testing.T) {
 	}
 }
 
+func TestRCONSendCommandPromptResponse(t *testing.T) {
+	addr, stop := fakeRCONServer(t, "secret")
+	defer stop()
+
+	client := newTestRCONClient(addr)
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	defer client.Close()
+
+	// PZ sends no terminating packet; SendCommand must not wait out the full
+	// read deadline or the 10s Docker healthcheck would fail.
+	start := time.Now()
+	if _, err := client.SendCommand("hello"); err != nil {
+		t.Fatalf("SendCommand: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("SendCommand took %v, want prompt response", elapsed)
+	}
+}
+
 func TestRCONNotConnected(t *testing.T) {
 	client := NewRCONClient(config.DefaultConfig())
 	if _, err := client.SendCommand("hello"); err == nil {

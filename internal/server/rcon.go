@@ -137,12 +137,18 @@ func (r *RCONClient) SendCommand(cmd string) (string, error) {
 
 	// PZ answers with one value packet per command and no terminator, so the
 	// response ends when the read times out or the connection closes (quit).
-	r.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	defer r.conn.SetReadDeadline(time.Time{})
-
+	// The deadline shrinks to a short grace period after the first packet so
+	// single-packet responses return promptly instead of eating the full
+	// timeout (the Docker healthcheck allows only 10s).
+	first := true
 	var result strings.Builder
 	for {
+		r.conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		if !first {
+			r.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		}
 		_, pktType, body, err := r.readPacket()
+		first = false
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
