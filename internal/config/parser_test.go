@@ -227,6 +227,41 @@ func TestParseListDedupes(t *testing.T) {
 	}
 }
 
+func TestCheckWritable(t *testing.T) {
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.DataDir = dir
+	cfg.ServerDir = filepath.Join(dir, "server")
+	if errs := cfg.CheckWritable(); len(errs) != 0 {
+		t.Fatalf("expected all writable, got: %v", errs)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".write-test")); !os.IsNotExist(err) {
+		t.Error("probe file was not cleaned up")
+	}
+}
+
+func TestCheckWritableReadOnly(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, permission checks are bypassed")
+	}
+	parent := t.TempDir()
+	ro := filepath.Join(parent, "ro")
+	if err := os.Mkdir(ro, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ro, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(ro, 0755)
+
+	cfg := DefaultConfig()
+	cfg.DataDir = ro
+	cfg.ServerDir = ro
+	if errs := cfg.CheckWritable(); len(errs) != 2 {
+		t.Fatalf("expected 2 permission errors, got: %v", errs)
+	}
+}
+
 func TestLoadSandboxEnv(t *testing.T) {
 	t.Setenv("SANDBOX_Zombies", "2")
 	t.Setenv("SANDBOX_DayLength", "3")

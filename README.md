@@ -41,9 +41,14 @@ cp .env.example .env
 # if left empty they are auto-generated and stored in ./data/credentials.env
 
 mkdir -p data server-files backups
+sudo chown -R 1000:1000 data server-files backups  # container runs as UID 1000
 
 docker compose up -d
 ```
+
+> The container runs as UID 1000 (`steam`). Create the host directories
+> **before** `docker compose up` — if they don't exist, Docker creates them
+> as root and the container cannot write to them.
 
 The server will download (~5-10 minutes first time), then start. Once you see `LuaNet: Initialization [DONE]` in logs, players can join on port `16261`.
 

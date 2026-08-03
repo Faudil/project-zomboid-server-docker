@@ -45,10 +45,34 @@ The JVM heap size is controlled by `MAX_RAM`. Default is 4096m (4GB). The actual
 
 ## Permission errors
 
+The container runs as UID 1000 (`steam`). If the host directories mounted
+into it are owned by root, the entrypoint exits with a message like:
+
+```text
+Permission errors - the container cannot write to its volumes:
+  - /home/steam/Zomboid is not writable by UID 1000: ...
+```
+
+This usually happens because the bind-mount directories (`./data`,
+`./server-files`, `./backups`) did not exist when you ran `docker compose up`
+-- **Docker auto-creates missing host directories as root**.
+
+Fix ownership from the compose directory:
+
 ```bash
-# Fix ownership of directories
+sudo chown -R 1000:1000 data/ server-files/ backups/
+docker compose up -d
+```
+
+To avoid it, create the directories *before* the first start:
+
+```bash
+mkdir -p data server-files backups
 sudo chown -R 1000:1000 data/ server-files/ backups/
 ```
+
+Named volumes (e.g. `-v pz-data:/home/steam/Zomboid`) do not have this
+problem -- Docker initializes their ownership from the image.
 
 ## Backup not working
 

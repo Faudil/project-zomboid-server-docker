@@ -49,9 +49,16 @@ TZ=America/New_York
 
 ## 4. Create Data Directories
 
+The container runs as UID 1000. Create the directories *before* the first
+start so Docker does not auto-create them as root:
+
 ```bash
 mkdir -p data server-files backups
+sudo chown -R 1000:1000 data server-files backups
 ```
+
+If you see `Permission errors - the container cannot write to its volumes`
+on start, run the `chown` above and start again.
 
 ## 5. Start the Server
 

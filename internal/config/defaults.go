@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
 
 type ServerConfig struct {
 	ServerName            string
@@ -116,6 +120,32 @@ func (c *ServerConfig) SpawnPointsPath() string {
 
 func (c *ServerConfig) SavePath() string {
 	return c.DataDir + "/Saves/Multiplayer/" + c.ServerName
+}
+
+// CheckWritable verifies the entrypoint can write to the data and server
+// directories (bind-mounted host folders). The container runs as UID 1000;
+// host folders created by root or Docker fail this probe.
+func (c *ServerConfig) CheckWritable() []error {
+	var errs []error
+	for _, dir := range []string{c.DataDir, c.ServerDir} {
+		if err := checkDirWritable(dir); err != nil {
+			errs = append(errs, fmt.Errorf("%s is not writable by UID %d: %w", dir, os.Geteuid(), err))
+		}
+	}
+	return errs
+}
+
+func checkDirWritable(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	probe := filepath.Join(dir, ".write-test")
+	f, err := os.OpenFile(probe, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	f.Close()
+	return os.Remove(probe)
 }
 
 func envStr(key, fallback string) string {

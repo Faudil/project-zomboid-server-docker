@@ -29,16 +29,32 @@ func main() {
 
 	cfg := config.DefaultConfig()
 
-	if err := cfg.EnsurePasswords(); err != nil {
-		fmt.Printf("ERROR resolving credentials: %v\n", err)
-		os.Exit(1)
-	}
-
 	if errs := cfg.Validate(); len(errs) > 0 {
 		fmt.Println("Configuration errors:")
 		for _, e := range errs {
 			fmt.Printf("  - %s\n", e)
 		}
+		os.Exit(1)
+	}
+
+	if errs := cfg.CheckWritable(); len(errs) > 0 {
+		fmt.Println("Permission errors - the container cannot write to its volumes:")
+		for _, e := range errs {
+			fmt.Printf("  - %v\n", e)
+		}
+		fmt.Println()
+		fmt.Println("The container runs as UID 1000 (steam user). The host directories")
+		fmt.Println("mounted into the container must be writable by UID 1000. From the")
+		fmt.Println("directory containing your docker-compose.yml, run:")
+		fmt.Println()
+		fmt.Println("  sudo chown -R 1000:1000 data server-files backups")
+		fmt.Println()
+		fmt.Println("then restart the container.")
+		os.Exit(1)
+	}
+
+	if err := cfg.EnsurePasswords(); err != nil {
+		fmt.Printf("ERROR resolving credentials: %v\n", err)
 		os.Exit(1)
 	}
 

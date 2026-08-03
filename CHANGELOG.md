@@ -16,6 +16,7 @@
 - GitHub Actions CI/CD (build, lint, push to GHCR + Docker Hub)
 
 ### Fixed
+- Startup now fails fast with an actionable message when the mounted volumes are not writable by UID 1000 (previously a bare `credentials.env: permission denied`); docs cover creating/chowning the host directories before first start
 - Crash at startup when `DISCORD_WEBHOOK_URL` is unset (nil-pointer in webhook notifications)
 - Healthcheck failing when `RCON_PASSWORD`/`ADMIN_PASSWORD` are auto-generated (passwords are now persisted to `<DATA_DIR>/credentials.env` and shared with the healthcheck)
 - Final backup running before the world was saved on shutdown (server is stopped/saved first)
