@@ -40,7 +40,7 @@ MOD_NAMES=SkillRecoveryJournal;MoreDescriptionForTraits
 
 ## How It Works
 
-1. `MOD_WORKSHOP_IDS` and `MOD_WORKSHOP_COLLECTION_IDS` are resolved to a list of item IDs (collections via the Steam Web API)
+1. `MOD_WORKSHOP_IDS` and `MOD_WORKSHOP_COLLECTION_IDS` are resolved to a list of item IDs (collections via the public Steam page, or the Steam Web API when `STEAM_API_KEY` is set)
 2. All items are downloaded in a **single steamcmd session** to `<server-files>/steamapps/workshop/content/108600/<id>/`
 3. Items already downloaded are skipped unless `MOD_UPDATE_ON_START=true`
 4. If `MOD_NAMES` is empty, mod folder names are auto-detected from the downloads
@@ -117,11 +117,16 @@ steamcmd re-downloads each item (unchanged items resolve quickly).
 
 ### Collection won't resolve
 
-- The Steam Web API is keyless best-effort; if it is unreachable you will see
-  `could not resolve workshop collection` and the server starts without those
-  items
-- Set `STEAM_API_KEY` (free, from [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)) to make resolution more reliable
-- Verify the collection is public
+- Collections are resolved from the public Steam community page, so no
+  `STEAM_API_KEY` is needed. If you see `could not resolve workshop
+  collection`, the server starts without those items; common causes:
+- Verify the collection is public (private collections cannot be resolved)
+- Steam occasionally blocks scraping; set `STEAM_API_KEY` (free, from
+  [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)) to
+  switch resolution to the Steam Web API instead
+- Explicit `MOD_WORKSHOP_IDS` never needs a key: you can paste the item IDs
+  (from the collection page, or tools like PZ ID Grabber) to skip collection
+  resolution entirely
 
 ### Server crashes after adding mods
 

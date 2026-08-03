@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -253,9 +254,6 @@ func ResolveModWorkshopIDs(cfg *config.ServerConfig) []string {
 	ids := splitIDs(cfg.ModWorkshopIDs)
 
 	if cfg.ModWorkshopCollection != "" {
-		if cfg.SteamAPIKey == "" {
-			fmt.Printf("ERROR: MOD_WORKSHOP_COLLECTION_IDS requires STEAM_API_KEY (free at https://steamcommunity.com/dev/apikey): Steam's collection API returns 400 without a key, so collections cannot be resolved\n")
-		}
 		for _, collID := range splitIDs(cfg.ModWorkshopCollection) {
 			items, err := resolveCollection(cfg, collID)
 			if err != nil {
@@ -293,14 +291,24 @@ func splitIDs(raw string) []string {
 	return out
 }
 
-// resolveCollection fetches the item IDs of a Steam workshop collection.
-// GetCollectionDetails requires a Steam Web API key: without one Steam
-// returns status 400.
-func resolveCollection(cfg *config.ServerConfig, collectionID string) ([]string, error) {
-	if cfg.SteamAPIKey == "" {
-		return nil, fmt.Errorf("STEAM_API_KEY is required to resolve collections")
-	}
+// collectionPageURL is the public Steam community page of a workshop
+// collection. It is scraped when no STEAM_API_KEY is configured; the Web API
+// (collectionAPI) needs a key but the page does not. Overridable in tests.
+var collectionPageURL = "https://steamcommunity.com/sharedfiles/filedetails/?id="
 
+// resolveCollection fetches the item IDs of a Steam workshop collection.
+// With a STEAM_API_KEY the Web API is used; without one the public collection
+// page is scraped instead, so collections work with no key at all.
+func resolveCollection(cfg *config.ServerConfig, collectionID string) ([]string, error) {
+	if cfg.SteamAPIKey != "" {
+		return resolveCollectionAPI(cfg, collectionID)
+	}
+	return resolveCollectionKeyless(cfg, collectionID)
+}
+
+// resolveCollectionAPI resolves a collection through the Steam Web API.
+// GetCollectionDetails requires an API key: without one Steam returns 400.
+func resolveCollectionAPI(cfg *config.ServerConfig, collectionID string) ([]string, error) {
 	form := url.Values{}
 	form.Set("collectioncount", "1")
 	form.Set("publishedfileids", collectionID)
@@ -348,6 +356,76 @@ func resolveCollection(cfg *config.ServerConfig, collectionID string) ([]string,
 		if child.PublishedFileID != "" {
 			ids = append(ids, child.PublishedFileID)
 		}
+	}
+	return ids, nil
+}
+
+// resolveCollectionKeyless scrapes the public Steam community page of a
+// collection. The item list is server-rendered into a collectionChildren
+// block, so no API key is needed. Returns an error for private, empty or
+// restructured pages.
+func resolveCollectionKeyless(cfg *config.ServerConfig, collectionID string) ([]string, error) {
+	req, err := http.NewRequest(http.MethodGet, collectionPageURL+collectionID, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64)")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("collection page returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading collection page: %w", err)
+	}
+
+	ids, err := parseCollectionPage(string(body))
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("collection %s is empty or private", collectionID)
+	}
+	return ids, nil
+}
+
+// parseCollectionPage extracts the item IDs of a workshop collection from its
+// community page HTML: the links inside the collectionChildren block, deduped
+// while preserving order.
+func parseCollectionPage(page string) ([]string, error) {
+	start := strings.Index(page, `<div class="collectionChildren">`)
+	if start == -1 {
+		return nil, fmt.Errorf("collection page has no collectionChildren section")
+	}
+	end := strings.Index(page[start:], `<div style="clear: left">`)
+	if end == -1 {
+		return nil, fmt.Errorf("collection page children section is truncated")
+	}
+	section := page[start : start+end]
+
+	re := regexp.MustCompile(`sharedfiles/filedetails/\?id=(\d+)`)
+	matches := re.FindAllStringSubmatch(section, -1)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("collection page children section has no items")
+	}
+
+	seen := make(map[string]struct{}, len(matches))
+	ids := make([]string, 0, len(matches))
+	for _, m := range matches {
+		id := m[1]
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
 	return ids, nil
 }

@@ -125,14 +125,85 @@ func TestResolveModWorkshopIDsCollectionFailureIsWarning(t *testing.T) {
 	}
 }
 
-func TestResolveModWorkshopIDsRequiresAPIKey(t *testing.T) {
+func TestResolveModWorkshopIDsCollectionFailureIsWarningNoKey(t *testing.T) {
+	// A failing keyless resolution must not break explicit IDs.
+	oldURL := collectionPageURL
+	collectionPageURL = "http://127.0.0.1:1/sharedfiles/filedetails/?id="
+	defer func() { collectionPageURL = oldURL }()
+
 	cfg := testConfig(t)
+	cfg.ModWorkshopIDs = "2160432461"
 	cfg.ModWorkshopCollection = "9999"
 
-	// Without a key the collection must not be resolved.
 	ids := ResolveModWorkshopIDs(cfg)
-	if len(ids) != 0 {
-		t.Errorf("ResolveModWorkshopIDs = %v, want none without an API key", ids)
+	if !reflect.DeepEqual(ids, []string{"2160432461"}) {
+		t.Errorf("ResolveModWorkshopIDs = %v, want explicit IDs only", ids)
+	}
+}
+
+func TestResolveCollectionKeyless(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The children block is scoped; unrelated links elsewhere on the
+		// page must not leak in.
+		fmt.Fprintln(w, `
+			<html><body>
+			<div class="collectionChildren">
+				<div class="workshopItem">
+					<a href="https://steamcommunity.com/sharedfiles/filedetails/?id=1111"><div class="workshopItemTitle">Mod A</div></a>
+					<a href="https://steamcommunity.com/sharedfiles/filedetails/?id=2222"><div class="workshopItemTitle">Mod B</div></a>
+				</div>
+				<div class="workshopItem">
+					<a href="https://steamcommunity.com/sharedfiles/filedetails/?id=1111"><div class="workshopItemTitle">Mod A again</div></a>
+				</div>
+			</div>
+			<div style="clear: left"></div>
+			<a href="https://steamcommunity.com/sharedfiles/filedetails/?id=9999">recommended, not part of the collection</a>
+			</body></html>
+		`)
+	}))
+	defer server.Close()
+	oldURL := collectionPageURL
+	collectionPageURL = server.URL + "/sharedfiles/filedetails/?id="
+	defer func() { collectionPageURL = oldURL }()
+
+	cfg := testConfig(t)
+	ids, err := resolveCollection(cfg, "9999")
+	if err != nil {
+		t.Fatalf("resolveCollection (keyless): %v", err)
+	}
+	want := []string{"1111", "2222"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Errorf("resolveCollection = %v, want %v", ids, want)
+	}
+}
+
+func TestResolveCollectionKeylessMalformedPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `<html><body>no collection here</body></html>`)
+	}))
+	defer server.Close()
+	oldURL := collectionPageURL
+	collectionPageURL = server.URL + "/sharedfiles/filedetails/?id="
+	defer func() { collectionPageURL = oldURL }()
+
+	cfg := testConfig(t)
+	if _, err := resolveCollection(cfg, "9999"); err == nil {
+		t.Fatal("resolveCollection should fail on a page without collectionChildren")
+	}
+}
+
+func TestResolveCollectionKeylessPrivatePage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `<div class="collectionChildren"></div><div style="clear: left"></div>`)
+	}))
+	defer server.Close()
+	oldURL := collectionPageURL
+	collectionPageURL = server.URL + "/sharedfiles/filedetails/?id="
+	defer func() { collectionPageURL = oldURL }()
+
+	cfg := testConfig(t)
+	if _, err := resolveCollection(cfg, "9999"); err == nil {
+		t.Fatal("resolveCollection should fail on an empty (private) collection")
 	}
 }
 
