@@ -92,6 +92,15 @@ mods dropped into `<DATA_DIR>/Workshop/`.
 | `UPDATE_ON_START` | bool | `true` | Run SteamCMD on container start |
 | `SERVER_BRANCH` | string | (empty) | Beta branch (`unstable`, `legacy41`, etc.) |
 | `STEAM_APP_ID` | string | `380870` | PZ Dedicated Server App ID |
+| `STEAM_USER` | string | (empty) | Steam account for downloading server files |
+| `STEAM_PASS` | string | (empty) | Steam account password |
+| `STEAM_GUARD_CODE` | string | (empty) | One-time Steam Guard code from your email (first login only) |
+
+**Important:** Steam now requires an account that **owns Project Zomboid** to
+download the dedicated server files (app 380870). Anonymous downloads fail
+with `Failed to install app '380870'`. Set `STEAM_USER` and `STEAM_PASS` in
+`.env`. If your account uses Steam Guard, put the code from your email into
+`STEAM_GUARD_CODE` on the first login; steamcmd remembers the login afterwards.
 
 ## Backups
 

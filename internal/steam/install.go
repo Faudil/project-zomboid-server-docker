@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -33,12 +34,50 @@ func runSteamCmd(args ...string) error {
 	return cmd.Run()
 }
 
+// runSteamCmdCapture runs steamcmd, streaming output to stdout while keeping
+// a copy for failure detection. steamcmd exits 0 even when app_update fails,
+// so the captured output is the only reliable signal.
+func runSteamCmdCapture(args ...string) (string, error) {
+	cmd := exec.Command(steamcmdPath, args...)
+	cmd.Dir = filepath.Dir(steamcmdPath)
+	cmd.Env = append(os.Environ(), "HOME=/home/steam")
+
+	var buf bytes.Buffer
+	out := io.MultiWriter(os.Stdout, &buf)
+	cmd.Stdout = out
+	cmd.Stderr = out
+
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+// steamLoginArgs builds the steamcmd login arguments. When STEAM_USER is set
+// the download runs with real credentials (Steam now requires an account that
+// owns Project Zomboid for app 380870); otherwise anonymous is used.
+func steamLoginArgs(cfg *config.ServerConfig) []string {
+	if cfg.SteamUser == "" {
+		return []string{"+login", "anonymous"}
+	}
+	args := []string{}
+	if cfg.SteamGuardCode != "" {
+		args = append(args, "+set_steam_guard_code", cfg.SteamGuardCode)
+	}
+	return append(args, "+login", cfg.SteamUser, cfg.SteamPass)
+}
+
+func startScriptPath(cfg *config.ServerConfig) string {
+	return cfg.ServerDir + "/start-server.sh"
+}
+
 func InstallOrUpdate(cfg *config.ServerConfig) error {
 	if !cfg.UpdateOnStart {
-		_, err := os.Stat(cfg.ServerDir + "/start-server.sh")
-		if err == nil {
+		if _, err := os.Stat(startScriptPath(cfg)); err == nil {
 			return nil
 		}
+	}
+
+	if cfg.SteamUser != "" && cfg.SteamPass == "" {
+		return fmt.Errorf("STEAM_PASS is required when STEAM_USER is set (steamcmd would otherwise prompt for a password and hang)")
 	}
 
 	updateCmd := fmt.Sprintf("app_update %s validate", cfg.SteamAppID)
@@ -47,17 +86,50 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 	}
 
 	args := []string{
+		"+@ShutdownOnFailedCommand", "1",
 		"+force_install_dir", cfg.ServerDir,
-		"+login", "anonymous",
-		updateCmd,
-		"+quit",
 	}
+	args = append(args, steamLoginArgs(cfg)...)
+	args = append(args, updateCmd, "+quit")
 
-	if err := runSteamCmd(args...); err != nil {
+	output, err := runSteamCmdCapture(args...)
+	if err != nil {
 		return fmt.Errorf("steamcmd install/update failed: %w", err)
 	}
 
+	if msg := steamFailure(output); msg != "" {
+		return fmt.Errorf("steamcmd could not download app %s: %s. Steam now requires an account that owns Project Zomboid - set STEAM_USER and STEAM_PASS in .env", cfg.SteamAppID, msg)
+	}
+
+	if _, err := os.Stat(startScriptPath(cfg)); err != nil {
+		return fmt.Errorf("server files were not installed (start-server.sh missing). Set STEAM_USER and STEAM_PASS in .env to download with a Steam account that owns Project Zomboid")
+	}
+
 	return nil
+}
+
+// steamFailure returns the first steamcmd error line found in the output,
+// or an empty string when the run looks successful.
+func steamFailure(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		lower := strings.ToLower(line)
+		for _, marker := range []string{
+			"failed to install app",
+			"no subscription",
+			"missing file permissions",
+			"missing configuration",
+			"access denied",
+			"invalid password",
+			"two-factor code required",
+			"steam guard code is incorrect",
+			"password incorrect",
+		} {
+			if strings.Contains(lower, marker) {
+				return strings.TrimSpace(line)
+			}
+		}
+	}
+	return ""
 }
 
 func workshopDir(cfg *config.ServerConfig) string {
@@ -75,7 +147,7 @@ func ResolveModWorkshopIDs(cfg *config.ServerConfig) []string {
 		for _, collID := range splitIDs(cfg.ModWorkshopCollection) {
 			items, err := resolveCollection(cfg, collID)
 			if err != nil {
-				fmt.Printf("WARNING: could not resolve workshop collection %s: %v\n", collID, err)
+				fmt.Printf("WARNING: could not resolve workshop collection %s: %v. Set STEAM_API_KEY (free at https://steamcommunity.com/dev/apikey) to enable collection resolution\n", collID, err)
 				continue
 			}
 			fmt.Printf("Resolved workshop collection %s: %d item(s)\n", collID, len(items))
@@ -191,7 +263,13 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 		return nil
 	}
 
-	if err := runSteamCmd(workshopBatchArgs(cfg, toDownload)...); err != nil {
+	args := []string{
+		"+@NoPromptForPassword", "1",
+		"+force_install_dir", cfg.ServerDir,
+	}
+	args = append(args, steamLoginArgs(cfg)...)
+	args = append(args, workshopBatchArgs(cfg, toDownload)...)
+	if err := runSteamCmd(args...); err != nil {
 		return fmt.Errorf("downloading workshop mods: %w", err)
 	}
 
@@ -206,13 +284,10 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 	return nil
 }
 
-// workshopBatchArgs builds a single steamcmd session downloading multiple
-// workshop items.
+// workshopBatchArgs builds the workshop_download_item commands for a single
+// steamcmd session.
 func workshopBatchArgs(cfg *config.ServerConfig, ids []string) []string {
-	args := []string{
-		"+force_install_dir", cfg.ServerDir,
-		"+login", "anonymous",
-	}
+	args := []string{}
 	for _, id := range ids {
 		args = append(args, fmt.Sprintf("workshop_download_item %s %s", workshopAppID, id))
 	}

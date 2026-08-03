@@ -34,6 +34,33 @@ docker compose logs zomboid
 
 The JVM heap size is controlled by `MAX_RAM`. Default is 4096m (4GB). The actual process may use more due to JVM overhead (~20-30% more than `-Xmx`). Reduce `MAX_RAM` or increase host memory.
 
+## Server files not downloading (start-server.sh missing)
+
+If the container exits with:
+
+```text
+ERROR installing/updating server: steamcmd could not download app 380870: ...
+```
+
+or the older `start-server.sh not found` error, it means the SteamCMD download
+failed. Since 2025 Steam requires an account that **owns Project Zomboid** to
+download the dedicated server files; anonymous downloads no longer work.
+
+```env
+STEAM_USER=your_steam_account
+STEAM_PASS=your_steam_password
+```
+
+If your account has Steam Guard enabled, add the one-time code from your
+email on the first login:
+
+```env
+STEAM_GUARD_CODE=ABC12
+```
+
+Then restart: `docker compose up -d`. The login is remembered afterwards, so
+`STEAM_GUARD_CODE` is only needed once per server-files volume.
+
 ## Workshop mods not downloading
 
 1. Ensure `MOD_WORKSHOP_IDS` is correctly formatted (semicolons, no trailing spaces)

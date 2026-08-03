@@ -118,6 +118,7 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference. The most i
 | `MOD_NAMES` | auto-detected | Mod folder names (empty = derived from downloads) |
 | `UPDATE_ON_START` | `true` | Auto-update server files |
 | `SERVER_BRANCH` | (empty) | Beta branch (`unstable`, `legacy41`) |
+| `STEAM_USER` / `STEAM_PASS` | (empty) | Steam account that owns Project Zomboid (required to download server files — anonymous downloads no longer work) |
 | `BACKUP_ENABLED` | `false` | Enable auto-backups |
 | `DISCORD_WEBHOOK_URL` | (empty) | Discord webhook URL |
 

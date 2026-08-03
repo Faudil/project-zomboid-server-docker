@@ -194,13 +194,79 @@ func TestWorkshopBatchArgs(t *testing.T) {
 	args := workshopBatchArgs(cfg, []string{"2160432461", "2503743612"})
 
 	want := []string{
-		"+force_install_dir", cfg.ServerDir,
-		"+login", "anonymous",
 		"workshop_download_item 108600 2160432461",
 		"workshop_download_item 108600 2503743612",
 		"+quit",
 	}
 	if !reflect.DeepEqual(args, want) {
 		t.Errorf("workshopBatchArgs = %v, want %v", args, want)
+	}
+}
+
+func TestSteamLoginArgsAnonymous(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = ""
+	if got := steamLoginArgs(cfg); !reflect.DeepEqual(got, []string{"+login", "anonymous"}) {
+		t.Errorf("steamLoginArgs = %v, want anonymous", got)
+	}
+}
+
+func TestSteamLoginArgsCredentials(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
+	want := []string{"+login", "myuser", "mypass"}
+	if got := steamLoginArgs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("steamLoginArgs = %v, want %v", got, want)
+	}
+}
+
+func TestSteamLoginArgsGuardCode(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
+	cfg.SteamGuardCode = "ABC12"
+	want := []string{"+set_steam_guard_code", "ABC12", "+login", "myuser", "mypass"}
+	if got := steamLoginArgs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("steamLoginArgs = %v, want %v", got, want)
+	}
+}
+
+func TestSteamFailureDetection(t *testing.T) {
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"ERROR! Failed to install app '380870' (Missing file permissions)", true},
+		{"ERROR! Failed to install app '380870' (No subscription)", true},
+		{"...\nERROR! Failed to install app '380870' (Missing configuration)\n", true},
+		{"Success! App '380870' fully installed", false},
+		{"Connecting anonymously to Steam Public...OK\nWaiting for user info...OK", false},
+	}
+	for _, tc := range cases {
+		if got := steamFailure(tc.output) != ""; got != tc.want {
+			t.Errorf("steamFailure(%q) = %v, want %v", tc.output, got, tc.want)
+		}
+	}
+}
+
+func TestInstallOrUpdateRequiresPassWithUser(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = ""
+	if err := InstallOrUpdate(cfg); err == nil {
+		t.Fatal("InstallOrUpdate should fail when STEAM_USER is set without STEAM_PASS")
+	}
+}
+
+func TestInstallOrUpdateSkipsWhenPresent(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UpdateOnStart = false
+	cfg.SteamUser = ""
+	if err := os.WriteFile(startScriptPath(cfg), []byte("#!/bin/bash\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := InstallOrUpdate(cfg); err != nil {
+		t.Errorf("InstallOrUpdate should skip when files exist and UPDATE_ON_START=false, got %v", err)
 	}
 }

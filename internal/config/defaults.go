@@ -36,6 +36,9 @@ type ServerConfig struct {
 	UpdateOnStart         bool
 	ServerBranch          string
 	SteamAppID            string
+	SteamUser             string
+	SteamPass             string
+	SteamGuardCode        string
 	BackupEnabled         bool
 	BackupInterval        int
 	BackupMaxCount        int
@@ -82,6 +85,9 @@ func DefaultConfig() *ServerConfig {
 		UpdateOnStart:         envBool("UPDATE_ON_START", true),
 		ServerBranch:          envStr("SERVER_BRANCH", ""),
 		SteamAppID:            envStr("STEAM_APP_ID", "380870"),
+		SteamUser:             envStr("STEAM_USER", ""),
+		SteamPass:             envStr("STEAM_PASS", ""),
+		SteamGuardCode:        envStr("STEAM_GUARD_CODE", ""),
 		BackupEnabled:         envBool("BACKUP_ENABLED", false),
 		BackupInterval:        envInt("BACKUP_INTERVAL", 360),
 		BackupMaxCount:        envInt("BACKUP_MAX_COUNT", 24),
