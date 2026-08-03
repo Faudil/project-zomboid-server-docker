@@ -1,7 +1,7 @@
 # Project Zomboid Server Docker
 
 [![Build and Publish](https://github.com/faudil/project-zomboid-server-docker/actions/workflows/build.yml/badge.svg)](https://github.com/faudil/project-zomboid-server-docker/actions/workflows/build.yml)
-[![Docker Pulls](https://img.shields.io/docker/pulls/faudil/project-zomboid-server-docker)](https://hub.docker.com/r/faudil/project-zomboid-server-docker)
+[![Docker Pulls](https://img.shields.io/docker/pulls/faudil/project-zomboid-server)](https://hub.docker.com/r/faudil/project-zomboid-server)
 [![License](https://img.shields.io/github/license/faudil/project-zomboid-server-docker)](LICENSE)
 
 A Docker container for the Project Zomboid dedicated server. Built from the ground up to be simple, reliable, and well-documented.
