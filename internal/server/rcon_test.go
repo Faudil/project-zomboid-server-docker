@@ -1,8 +1,9 @@
 package server
 
 import (
-	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"testing"
@@ -11,9 +12,9 @@ import (
 	"github.com/faudil/project-zomboid-server-docker/internal/config"
 )
 
-// fakeRCONServer mimics the PZ RCON protocol: a line-based password handshake
-// followed by commands answered with output lines terminated by an "RCON: "
-// prompt line. The connection stays open between commands.
+// fakeRCONServer mimics the PZ RCON protocol: standard Source RCON packets.
+// On auth it sends an empty acknowledgement followed by the auth result; on
+// commands it replies with a single value packet, no terminator.
 func fakeRCONServer(t *testing.T, password string) (addr string, stop func()) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -28,32 +29,71 @@ func fakeRCONServer(t *testing.T, password string) (addr string, stop func()) {
 		}
 		defer conn.Close()
 
-		reader := bufio.NewReader(conn)
-		auth, err := reader.ReadString('\n')
-		if err != nil {
+		readPacket := func() (id, typ int32, body string, err error) {
+			var sizeBuf [4]byte
+			if _, err = io.ReadFull(conn, sizeBuf[:]); err != nil {
+				return 0, 0, "", err
+			}
+			size := int32(binary.LittleEndian.Uint32(sizeBuf[:]))
+			payload := make([]byte, size)
+			if _, err = io.ReadFull(conn, payload); err != nil {
+				return 0, 0, "", err
+			}
+			id = int32(binary.LittleEndian.Uint32(payload[0:4]))
+			typ = int32(binary.LittleEndian.Uint32(payload[4:8]))
+			body = strings.TrimRight(string(payload[8:]), "\x00")
+			return id, typ, body, nil
+		}
+		writePacket := func(id, typ int32, body string) error {
+			payload := make([]byte, 8+len(body)+2)
+			binary.LittleEndian.PutUint32(payload[0:4], uint32(id))
+			binary.LittleEndian.PutUint32(payload[4:8], uint32(typ))
+			copy(payload[8:], body)
+			pkt := make([]byte, 4+len(payload))
+			binary.LittleEndian.PutUint32(pkt[0:4], uint32(len(payload)))
+			copy(pkt[4:], payload)
+			_, err := conn.Write(pkt)
+			return err
+		}
+
+		// Auth: empty ack, then the result.
+		authID, authType, pw, err := readPacket()
+		if err != nil || authType != rconTypeAuth {
 			return
 		}
-		if strings.TrimSpace(auth) != password {
-			fmt.Fprintf(conn, "Password incorrect\n")
+		writePacket(authID, rconTypeResponse, "")
+		if pw != password {
+			writePacket(-1, rconTypeExec, "")
 			return
 		}
-		fmt.Fprintf(conn, "Password correct\n")
+		writePacket(authID, rconTypeExec, "")
 
 		for {
-			line, err := reader.ReadString('\n')
+			cmdID, cmdType, cmd, err := readPacket()
 			if err != nil {
 				return
 			}
-			cmd := strings.TrimSpace(line)
-			switch cmd {
+			if cmdType == rconTypeAuth {
+				writePacket(cmdID, rconTypeResponse, "")
+				if cmd != password {
+					writePacket(-1, rconTypeExec, "")
+					return
+				}
+				writePacket(cmdID, rconTypeExec, "")
+				continue
+			}
+			if cmdType != rconTypeExec {
+				continue
+			}
+			switch strings.TrimSpace(cmd) {
 			case "quit":
 				return
 			case "hello":
-				fmt.Fprintf(conn, "RCON: hello\n")
+				writePacket(cmdID, rconTypeResponse, "hello")
 			case "save":
-				fmt.Fprintf(conn, "World saved\nRCON: \n")
+				writePacket(cmdID, rconTypeResponse, "World saved")
 			default:
-				fmt.Fprintf(conn, "RCON: %s\n", cmd)
+				writePacket(cmdID, rconTypeResponse, cmd)
 			}
 		}
 	}()
