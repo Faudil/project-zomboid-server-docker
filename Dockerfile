@@ -44,7 +44,7 @@ RUN curl -sL "https://github.com/SteamRE/DepotDownloader/releases/download/Depot
     rm -rf /tmp/dd /tmp/dd.zip
 SHELL ["/bin/sh", "-c"]
 
-RUN mkdir -p /home/steam/pzserver /home/steam/Zomboid/Server /home/steam/Zomboid/Saves/Multiplayer /home/steam/Zomboid/backups && \
+RUN mkdir -p /home/steam/pzserver /home/steam/Zomboid/Server /home/steam/Zomboid/Saves/Multiplayer /home/steam/Zomboid/backups /home/steam/Zomboid/mods && \
     chown -R steam:steam /home/steam
 
 COPY --from=builder /entrypoint /home/steam/entrypoint

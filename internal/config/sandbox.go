@@ -97,11 +97,7 @@ func (c *ServerConfig) WriteSandboxVars() error {
 			sep = ""
 		}
 		v := vars[k]
-		if strings.HasPrefix(v, `{`) {
-			sb.WriteString(fmt.Sprintf("    %s = %s%s\n", k, v, sep))
-		} else {
-			sb.WriteString(fmt.Sprintf("    %s = %s,%s\n", k, v, sep))
-		}
+		sb.WriteString(fmt.Sprintf("    %s = %s%s\n", k, v, sep))
 	}
 
 	sb.WriteString("}\n")

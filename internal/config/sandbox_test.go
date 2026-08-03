@@ -52,4 +52,7 @@ func TestWriteSandboxVarsContent(t *testing.T) {
 	if !strings.Contains(content, "ZombieConfig = {") {
 		t.Errorf("default ZombieConfig missing:\n%s", content)
 	}
+	if strings.Contains(content, ",,") {
+		t.Errorf("double comma in sandbox output (invalid Lua):\n%s", content)
+	}
 }
