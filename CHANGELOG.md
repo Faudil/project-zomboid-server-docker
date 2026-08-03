@@ -17,7 +17,8 @@
 
 ### Fixed
 - SteamCMD no longer reports "Server files up to date" when the download silently failed: output is captured, `ERROR! Failed to install app`-style failures are detected, and the install is verified by checking `start-server.sh` afterwards
-- Steam's transient "Missing file permissions" app_update regression (steam-for-linux #10979) is now retried automatically with a backoff instead of failing the container on the first attempt; permanent failures (bad credentials) fail immediately
+- Steam's intermittent anonymous-download failures (cryptic `Missing file permissions`/`Missing configuration` errors, rate-limiting of anonymous downloads) are now retried for ~6 minutes per start with a 60s backoff; docker's restart policy continues afterwards and partial downloads resume. Permanent failures (bad credentials) still fail immediately
+- Workshop mod downloads get one automatic retry when the anonymous batch fails
 - `STEAM_USER`/`STEAM_PASS`/`STEAM_GUARD_CODE` supported as the reliable workaround for the Steam-side failure and for workshop downloads when anonymous fails
 - Refuses to run when `STEAM_USER` is set without `STEAM_PASS` (steamcmd would otherwise prompt and hang forever)
 - Workshop collection resolution warning now points at `STEAM_API_KEY` when the Steam API rejects the keyless request

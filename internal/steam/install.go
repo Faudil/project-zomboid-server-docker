@@ -25,7 +25,11 @@ const workshopAppID = "108600"
 // collections. Overridable in tests.
 var collectionAPI = "https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/"
 
-func runSteamCmd(args ...string) error {
+// runSteamCmd runs steamcmd streaming output to the container logs.
+// Overridable in tests.
+var runSteamCmd = runSteamCmdImpl
+
+func runSteamCmdImpl(args ...string) error {
 	cmd := exec.Command(steamcmdPath, args...)
 	cmd.Dir = filepath.Dir(steamcmdPath)
 	cmd.Stdout = os.Stdout
@@ -70,13 +74,16 @@ func startScriptPath(cfg *config.ServerConfig) string {
 	return cfg.ServerDir + "/start-server.sh"
 }
 
-// Steam's "Missing file permissions" / "Missing configuration" app_update
-// failures are a known transient Valve-side issue (steam-for-linux #10979)
-// that affects all games intermittently, including with owned accounts.
-// Retry with a backoff before giving up.
-const maxUpdateAttempts = 3
+// Steam intermittently fails anonymous app_update downloads with cryptic
+// errors ("Missing file permissions", "Missing configuration", "Disk write
+// failure", "state is 0x..." after update job). This is Steam-side
+// rate-limiting/flakiness of anonymous downloads and affects all free
+// dedicated server apps; it works again after a while. Retry with a
+// meaningful backoff so a working window is eventually caught. Partial
+// downloads are resumed by steamcmd on each attempt.
+const maxUpdateAttempts = 6
 
-var updateRetryDelay = 30 * time.Second
+var updateRetryDelay = 60 * time.Second
 
 // permanentFailure reports whether a steamcmd failure line describes a
 // problem retrying cannot fix (e.g. bad credentials).
@@ -108,7 +115,7 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 
 	for attempt := 1; attempt <= maxUpdateAttempts; attempt++ {
 		if attempt > 1 {
-			fmt.Printf("Steam download failed, retrying (attempt %d/%d)...\n", attempt, maxUpdateAttempts)
+			fmt.Printf("Steam download failed - Steam intermittently rate-limits anonymous downloads. Retrying in 60s (attempt %d/%d)...\n", attempt, maxUpdateAttempts)
 			time.Sleep(updateRetryDelay)
 		}
 
@@ -124,7 +131,7 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 		}
 	}
 
-	return fmt.Errorf("steamcmd could not download app %s after %d attempts. This is a known transient Steam-side failure (steam-for-linux #10979) - restart the container to retry (docker compose up -d). Setting STEAM_USER/STEAM_PASS (an account that owns Project Zomboid) often resolves it", cfg.SteamAppID, maxUpdateAttempts)
+	return fmt.Errorf("steamcmd could not download app %s after %d attempts (%d minutes). Steam is intermittently failing anonymous downloads - docker's restart policy will keep retrying, and partial downloads are resumed. Setting STEAM_USER/STEAM_PASS (an account that owns Project Zomboid) bypasses the anonymous rate-limiting entirely", cfg.SteamAppID, maxUpdateAttempts, maxUpdateAttempts)
 }
 
 func runInstallAttempt(cfg *config.ServerConfig, updateCmd string) error {
@@ -311,13 +318,25 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 	}
 	args = append(args, steamLoginArgs(cfg)...)
 	args = append(args, workshopBatchArgs(cfg, toDownload)...)
-	if err := runSteamCmd(args...); err != nil {
-		return fmt.Errorf("downloading workshop mods: %w", err)
+
+	// Anonymous downloads are intermittently rate-limited by Steam; retry the
+	// batch once before giving up on this start.
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := runSteamCmd(args...); err != nil {
+			if attempt == 2 {
+				fmt.Printf("WARNING: workshop mod download failed: %v\n", err)
+				return nil
+			}
+			fmt.Println("Workshop mod download failed (Steam intermittently rate-limits anonymous downloads), retrying in 60s...")
+			time.Sleep(updateRetryDelay)
+			continue
+		}
+		break
 	}
 
 	for _, id := range toDownload {
 		if _, err := os.Stat(filepath.Join(dir, id)); err != nil {
-			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, or invalid ID). If it is a public mod, anonymous workshop downloads may be failing - try STEAM_USER/STEAM_PASS\n", id)
+			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, invalid ID, or Steam-side anonymous download failure). If it is a public mod, try STEAM_USER/STEAM_PASS\n", id)
 		} else {
 			fmt.Printf("Downloaded workshop mod %s\n", id)
 		}

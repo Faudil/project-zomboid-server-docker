@@ -118,7 +118,7 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference. The most i
 | `MOD_NAMES` | auto-detected | Mod folder names (empty = derived from downloads) |
 | `UPDATE_ON_START` | `true` | Auto-update server files |
 | `SERVER_BRANCH` | (empty) | Beta branch (`unstable`, `legacy41`) |
-| `STEAM_USER` / `STEAM_PASS` | (empty) | Optional Steam account (owns Project Zomboid) — reliable workaround when anonymous SteamCMD downloads fail, and needed for workshop mods if anonymous fails |
+| `STEAM_USER` / `STEAM_PASS` | (empty) | Optional Steam account (owns Project Zomboid) — bypasses Steam's intermittent anonymous download rate-limiting and fixes failing workshop downloads |
 | `BACKUP_ENABLED` | `false` | Enable auto-backups |
 | `DISCORD_WEBHOOK_URL` | (empty) | Discord webhook URL |
 

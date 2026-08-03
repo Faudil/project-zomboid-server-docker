@@ -183,10 +183,73 @@ func TestDownloadWorkshopItemsForcesUpdate(t *testing.T) {
 	writeModDir(t, itemDir, false)
 	cfg.ModUpdateOnStart = true
 
-	// ModUpdateOnStart bypasses the existence check; steamcmd is missing in
-	// tests so this must fail with an error (proving it attempted to run).
-	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err == nil {
-		t.Error("DownloadWorkshopItems should attempt the download when ModUpdateOnStart is set")
+	oldRun := runSteamCmd
+	runSteamCmd = func(args ...string) error {
+		// Simulate a successful batch: place the item on disk.
+		return os.MkdirAll(itemDir, 0755)
+	}
+	defer func() { runSteamCmd = oldRun }()
+
+	// ModUpdateOnStart bypasses the existence check and the batch must run.
+	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
+		t.Errorf("DownloadWorkshopItems: %v", err)
+	}
+}
+
+func TestDownloadWorkshopItemsRetriesOnce(t *testing.T) {
+	cfg := testConfig(t)
+	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
+
+	oldRun := runSteamCmd
+	oldDelay := updateRetryDelay
+	calls := 0
+	runSteamCmd = func(args ...string) error {
+		calls++
+		if calls == 1 {
+			return fmt.Errorf("exit status 7")
+		}
+		return os.MkdirAll(itemDir, 0755)
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmd = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
+		t.Errorf("DownloadWorkshopItems: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("steamcmd batch ran %d times, want 2 (one retry)", calls)
+	}
+	if _, err := os.Stat(itemDir); err != nil {
+		t.Error("item was not created by the retried batch")
+	}
+}
+
+func TestDownloadWorkshopItemsGivesUpAfterRetry(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = ""
+
+	oldRun := runSteamCmd
+	oldDelay := updateRetryDelay
+	calls := 0
+	runSteamCmd = func(args ...string) error {
+		calls++
+		return fmt.Errorf("exit status 7")
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmd = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	// Must not return an error (non-fatal warning path) but must retry once.
+	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
+		t.Errorf("DownloadWorkshopItems should degrade to a warning, got %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("steamcmd batch ran %d times, want 2", calls)
 	}
 }
 

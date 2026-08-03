@@ -42,17 +42,19 @@ If the container exits with:
 ERROR installing/updating server: steamcmd could not download app 380870 ...
 ```
 
-Steam is intermittently failing anonymous `app_update` downloads with a
-cryptic error (`Missing file permissions` / `Missing configuration`). This is
-a known transient Valve-side regression
-([steam-for-linux #10979](https://github.com/ValveSoftware/steam-for-linux/issues/10979))
-that also affects owned accounts. The entrypoint retries automatically on
-every start.
+Steam intermittently fails anonymous `app_update` downloads with cryptic
+errors (`Missing file permissions`, `Missing configuration`, `Disk write
+failure`). This is Steam-side rate-limiting/flakiness of anonymous downloads
+and affects all free dedicated server apps, not just Project Zomboid. It
+clears up on its own, and the entrypoint already:
 
-If it keeps failing:
+1. Retries for ~6 minutes (60s between attempts) before exiting
+2. Lets docker's restart policy keep retrying after that
+3. Resumes partial downloads from where they left off
 
-1. Restart a few times: `docker compose up -d` (the failure is often transient)
-2. Set Steam credentials as the reliable workaround:
+If it keeps failing for a long time, the reliable fix is Steam credentials
+(an account that owns Project Zomboid), which bypass the anonymous
+rate-limiting:
 
 ```env
 STEAM_USER=your_steam_account
