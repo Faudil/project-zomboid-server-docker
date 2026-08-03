@@ -1,6 +1,6 @@
 FROM golang:1.23-alpine AS builder
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git=2.49.1-r0
 
 WORKDIR /build
 
@@ -20,10 +20,10 @@ LABEL org.opencontainers.image.source="https://github.com/faudil/project-zomboid
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        lib32gcc-s1 \
-        lib32stdc++6 \
-        ca-certificates \
-        tzdata && \
+        lib32gcc-s1=14.2.0-19 \
+        lib32stdc++6=14.2.0-19 \
+        ca-certificates=20250419 \
+        tzdata=2025b-4+deb13u1 && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /home/steam/pzserver /home/steam/Zomboid/Server /home/steam/Zomboid/Saves/Multiplayer /home/steam/Zomboid/backups && \
@@ -32,13 +32,13 @@ RUN mkdir -p /home/steam/pzserver /home/steam/Zomboid/Server /home/steam/Zomboid
 COPY --from=builder /entrypoint /home/steam/entrypoint
 RUN chmod +x /home/steam/entrypoint && chown steam:steam /home/steam/entrypoint
 
-RUN echo '#!/bin/bash\n/home/steam/entrypoint healthcheck' > /healthcheck.sh && \
+RUN printf '#!/bin/bash\n/home/steam/entrypoint healthcheck\n' > /healthcheck.sh && \
     chmod +x /healthcheck.sh
 
 ENV HOME=/home/steam
 ENV USER=steam
 
-USER steam
+USER 1000
 
 EXPOSE 16261/udp 16262/udp 27015/tcp 8080/tcp
 
