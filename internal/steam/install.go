@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,6 +87,42 @@ func startScriptPath(cfg *config.ServerConfig) string {
 	return cfg.ServerDir + "/start-server.sh"
 }
 
+// fixExecutableBits restores the execute permission on the server binaries.
+// DepotDownloader extracts files without preserving the Steam depot's
+// executable bits, so jre64/bin/java and ProjectZomboid64 land as mode 0644.
+// Project Zomboid's start-server.sh only prints "Only 64bit is supported"
+// when jre64/bin/java cannot be executed, so without this fix every start
+// fails with that misleading message and exits 0.
+func fixExecutableBits(cfg *config.ServerConfig) {
+	files := []string{
+		startScriptPath(cfg),
+		filepath.Join(cfg.ServerDir, "ProjectZomboid64"),
+	}
+
+	// jre64/bin and linux64 contents are all executables or shared libraries;
+	// shared libraries do not need +x, but applying it matches the depot.
+	for _, dir := range []string{
+		filepath.Join(cfg.ServerDir, "jre64", "bin"),
+		filepath.Join(cfg.ServerDir, "linux64"),
+	} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				files = append(files, filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+
+	for _, f := range files {
+		if err := os.Chmod(f, 0755); err != nil && !os.IsNotExist(err) {
+			fmt.Printf("WARNING: could not set executable bit on %s: %v\n", f, err)
+		}
+	}
+}
+
 const maxUpdateAttempts = 6
 
 var updateRetryDelay = 60 * time.Second
@@ -133,6 +170,7 @@ func depotPermanentFailure(output string) bool {
 func InstallOrUpdate(cfg *config.ServerConfig) error {
 	if !cfg.UpdateOnStart {
 		if _, err := os.Stat(startScriptPath(cfg)); err == nil {
+			fixExecutableBits(cfg)
 			return nil
 		}
 	}
@@ -151,6 +189,7 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 
 		output, err := runInstallAttempt(cfg, args)
 		if err == nil {
+			fixExecutableBits(cfg)
 			return nil
 		}
 		fmt.Printf("Server download attempt %d/%d failed: %v\n", attempt, maxUpdateAttempts, err)
@@ -214,10 +253,13 @@ func ResolveModWorkshopIDs(cfg *config.ServerConfig) []string {
 	ids := splitIDs(cfg.ModWorkshopIDs)
 
 	if cfg.ModWorkshopCollection != "" {
+		if cfg.SteamAPIKey == "" {
+			fmt.Printf("ERROR: MOD_WORKSHOP_COLLECTION_IDS requires STEAM_API_KEY (free at https://steamcommunity.com/dev/apikey): Steam's collection API returns 400 without a key, so collections cannot be resolved\n")
+		}
 		for _, collID := range splitIDs(cfg.ModWorkshopCollection) {
 			items, err := resolveCollection(cfg, collID)
 			if err != nil {
-				fmt.Printf("WARNING: could not resolve workshop collection %s: %v. Set STEAM_API_KEY (free at https://steamcommunity.com/dev/apikey) to enable collection resolution\n", collID, err)
+				fmt.Printf("WARNING: could not resolve workshop collection %s: %v\n", collID, err)
 				continue
 			}
 			fmt.Printf("Resolved workshop collection %s: %d item(s)\n", collID, len(items))
@@ -252,28 +294,25 @@ func splitIDs(raw string) []string {
 }
 
 // resolveCollection fetches the item IDs of a Steam workshop collection.
-// GetCollectionDetails works without an API key; when a key is configured it
-// is appended for reliability.
+// GetCollectionDetails requires a Steam Web API key: without one Steam
+// returns status 400.
 func resolveCollection(cfg *config.ServerConfig, collectionID string) ([]string, error) {
-	payload := map[string]interface{}{
-		"collectioncount":  1,
-		"publishedfileids": []string{collectionID},
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
+	if cfg.SteamAPIKey == "" {
+		return nil, fmt.Errorf("STEAM_API_KEY is required to resolve collections")
 	}
 
-	req, err := http.NewRequest(http.MethodPost, collectionAPI, bytes.NewReader(body))
+	form := url.Values{}
+	form.Set("collectioncount", "1")
+	form.Set("publishedfileids", collectionID)
+
+	req, err := http.NewRequest(http.MethodPost, collectionAPI, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if cfg.SteamAPIKey != "" {
-		q := req.URL.Query()
-		q.Set("key", cfg.SteamAPIKey)
-		req.URL.RawQuery = q.Encode()
-	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	q := req.URL.Query()
+	q.Set("key", cfg.SteamAPIKey)
+	req.URL.RawQuery = q.Encode()
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)

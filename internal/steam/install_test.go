@@ -95,6 +95,7 @@ func TestResolveModWorkshopIDsMergesCollections(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.ModWorkshopIDs = "2160432461;2503743612"
 	cfg.ModWorkshopCollection = "9999"
+	cfg.SteamAPIKey = "test-key"
 
 	ids := ResolveModWorkshopIDs(cfg)
 	want := []string{"2160432461", "2503743612", "2685168362"}
@@ -115,11 +116,23 @@ func TestResolveModWorkshopIDsCollectionFailureIsWarning(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.ModWorkshopIDs = "2160432461"
 	cfg.ModWorkshopCollection = "9999"
+	cfg.SteamAPIKey = "test-key"
 
 	// Explicit IDs survive a failed collection lookup.
 	ids := ResolveModWorkshopIDs(cfg)
 	if !reflect.DeepEqual(ids, []string{"2160432461"}) {
 		t.Errorf("ResolveModWorkshopIDs = %v, want explicit IDs only", ids)
+	}
+}
+
+func TestResolveModWorkshopIDsRequiresAPIKey(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ModWorkshopCollection = "9999"
+
+	// Without a key the collection must not be resolved.
+	ids := ResolveModWorkshopIDs(cfg)
+	if len(ids) != 0 {
+		t.Errorf("ResolveModWorkshopIDs = %v, want none without an API key", ids)
 	}
 }
 
@@ -140,6 +153,7 @@ func TestResolveCollectionNotfound(t *testing.T) {
 	defer func() { collectionAPI = oldAPI }()
 
 	cfg := testConfig(t)
+	cfg.SteamAPIKey = "test-key"
 	if _, err := resolveCollection(cfg, "9999"); err == nil {
 		t.Fatal("resolveCollection should fail for an unknown collection")
 	}
@@ -362,6 +376,84 @@ func TestInstallOrUpdateSkipsWhenPresent(t *testing.T) {
 	}
 	if err := InstallOrUpdate(cfg); err != nil {
 		t.Errorf("InstallOrUpdate should skip when files exist and UPDATE_ON_START=false, got %v", err)
+	}
+}
+
+func TestInstallOrUpdateSkipPathRestoresExecutableBits(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.UpdateOnStart = false
+	cfg.SteamUser = ""
+	// Simulate a DepotDownloader extraction that stripped executable bits.
+	for _, f := range []string{"start-server.sh", "ProjectZomboid64"} {
+		path := filepath.Join(cfg.ServerDir, f)
+		if err := os.WriteFile(path, []byte("#!/bin/bash\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	javaPath := filepath.Join(cfg.ServerDir, "jre64", "bin", "java")
+	if err := os.MkdirAll(filepath.Dir(javaPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(javaPath, []byte("elf"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := InstallOrUpdate(cfg); err != nil {
+		t.Fatalf("InstallOrUpdate should skip, got %v", err)
+	}
+	for _, f := range []string{"start-server.sh", "ProjectZomboid64", "jre64/bin/java"} {
+		info, err := os.Stat(filepath.Join(cfg.ServerDir, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0111 == 0 {
+			t.Errorf("%s is not executable after InstallOrUpdate (mode %v)", f, info.Mode())
+		}
+	}
+}
+
+func TestFixExecutableBits(t *testing.T) {
+	cfg := testConfig(t)
+	write := func(path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	targets := []string{
+		"start-server.sh",
+		"ProjectZomboid64",
+		"jre64/bin/java",
+		"jre64/bin/jfr",
+		"linux64/libfoo.so",
+	}
+	for _, f := range targets {
+		write(filepath.Join(cfg.ServerDir, f))
+	}
+	// Unrelated files must not be touched.
+	write(filepath.Join(cfg.ServerDir, "media", "texture.txt"))
+
+	fixExecutableBits(cfg)
+
+	for _, f := range targets {
+		info, err := os.Stat(filepath.Join(cfg.ServerDir, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0111 == 0 {
+			t.Errorf("%s should be executable after fixExecutableBits (mode %v)", f, info.Mode())
+		}
+	}
+	info, err := os.Stat(filepath.Join(cfg.ServerDir, "media", "texture.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm()&0111 != 0 {
+		t.Errorf("media/texture.txt should not have been modified (mode %v)", info.Mode())
 	}
 }
 
