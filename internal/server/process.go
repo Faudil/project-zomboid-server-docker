@@ -35,6 +35,14 @@ func (m *Manager) Start() error {
 	}
 
 	args := []string{startScript, "-servername", m.cfg.ServerName}
+	// The admin password must be passed on the command line: the b42
+	// start-server.sh forwards "$@" to ProjectZomboid64 and ignores the
+	// ADMIN_PASSWORD environment variable. Without it the server prompts
+	// "Enter new administrator password:" on stdin on first run and crashes
+	// (Scanner: No line found) because stdin is closed in Docker.
+	if m.cfg.AdminPassword != "" {
+		args = append(args, "-adminpassword", m.cfg.AdminPassword)
+	}
 	if !m.cfg.UseSteam {
 		args = append(args, "-nosteam")
 	}

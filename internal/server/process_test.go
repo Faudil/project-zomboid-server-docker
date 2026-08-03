@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,5 +94,41 @@ func TestStopBeforeStart(t *testing.T) {
 	m := newTestManager(t)
 	if err := m.Stop(); err != nil {
 		t.Fatalf("Stop before Start should be a no-op, got %v", err)
+	}
+}
+
+func TestStartPassesAdminPassword(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := filepath.Join(dir, "start-server.sh")
+	content := fmt.Sprintf("#!/bin/bash\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.ServerDir = dir
+	cfg.DataDir = dir
+	cfg.AdminPassword = "admin-pass"
+	cfg.UseSteam = true
+
+	m := NewManager(cfg)
+	if err := m.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := m.Wait(); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := string(data)
+	if !strings.Contains(args, "-servername servertest") {
+		t.Errorf("args = %q, want -servername servertest", args)
+	}
+	if !strings.Contains(args, "-adminpassword admin-pass") {
+		t.Errorf("args = %q, want -adminpassword admin-pass", args)
 	}
 }
