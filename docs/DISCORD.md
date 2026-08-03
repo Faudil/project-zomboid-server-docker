@@ -23,7 +23,6 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXXXXXXX/YYYYYYYYYYYY
 DISCORD_NOTIFY_START=true
 DISCORD_NOTIFY_STOP=true
 DISCORD_NOTIFY_CRASH=true
-DISCORD_NOTIFY_PLAYERS=false
 ```
 
 ### 3. Restart
@@ -82,7 +81,3 @@ curl -X POST \
   -d '{"content":"Test from PZ server"}' \
   YOUR_WEBHOOK_URL
 ```
-
-## Advanced: Player Notifications
-
-Set `DISCORD_NOTIFY_PLAYERS=true` in `.env`.

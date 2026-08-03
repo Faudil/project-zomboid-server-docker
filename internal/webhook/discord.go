@@ -74,21 +74,21 @@ func (d *DiscordWebhook) Send(title, description string, color int) error {
 }
 
 func (d *DiscordWebhook) NotifyStart() {
-	if !d.cfg.DiscordStart {
+	if d == nil || !d.cfg.DiscordStart {
 		return
 	}
 	_ = d.Send("\U0001f7e2 Server Started", fmt.Sprintf("**%s** is now online", d.cfg.PublicName), 0x57F287)
 }
 
 func (d *DiscordWebhook) NotifyStop() {
-	if !d.cfg.DiscordStop {
+	if d == nil || !d.cfg.DiscordStop {
 		return
 	}
 	_ = d.Send("\U0001f534 Server Stopped", fmt.Sprintf("**%s** has shut down", d.cfg.PublicName), 0xED4245)
 }
 
 func (d *DiscordWebhook) NotifyCrash(err error) {
-	if !d.cfg.DiscordCrash {
+	if d == nil || !d.cfg.DiscordCrash {
 		return
 	}
 	_ = d.Send("\U0001f4a5 Server Crashed", fmt.Sprintf("**%s** exited unexpectedly: %v", d.cfg.PublicName, err), 0xFEE75C)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/faudil/project-zomboid-server-docker/internal/config"
@@ -17,31 +18,40 @@ import (
 
 type Manager struct {
 	cfg *config.ServerConfig
+	mu  sync.Mutex
 }
 
 func NewManager(cfg *config.ServerConfig) *Manager {
 	return &Manager{cfg: cfg}
 }
 
+// Run creates a backup of the current save. A mutex ensures scheduled backups
+// and the final shutdown backup never run concurrently.
 func (m *Manager) Run() {
 	if !m.cfg.BackupEnabled {
 		return
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if err := os.MkdirAll(m.cfg.BackupPath, 0755); err != nil {
 		fmt.Printf("creating backup directory: %v\n", err)
 		return
 	}
 
-	m.rotate()
-
+	// Create first, then rotate so the on-disk count never exceeds the max.
 	if err := m.createBackup(); err != nil {
 		fmt.Printf("backup failed: %v\n", err)
+		return
 	}
+	m.rotate()
 }
 
 func (m *Manager) createBackup() error {
-	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	// Nanosecond precision guarantees unique names even when backups are
+	// triggered concurrently (e.g. scheduled backup during shutdown).
+	timestamp := time.Now().Format("2006-01-02_15-04-05.000000000")
 	filename := fmt.Sprintf("%s_backup_%s.tar.gz", m.cfg.ServerName, timestamp)
 	fullPath := filepath.Join(m.cfg.BackupPath, filename)
 
@@ -134,8 +144,26 @@ func (m *Manager) Scheduler(srv *server.Manager) {
 
 		for range ticker.C {
 			fmt.Println("Starting scheduled backup...")
+			m.saveWorld(srv)
 			m.Run()
 			fmt.Println("Scheduled backup complete")
 		}
 	}()
+}
+
+// saveWorld requests the server to flush its state to disk via RCON so the
+// backup captures a consistent snapshot.
+func (m *Manager) saveWorld(srv *server.Manager) {
+	client := server.NewRCONClient(m.cfg)
+	if err := client.Connect(); err != nil {
+		fmt.Printf("RCON connection failed before backup: %v\n", err)
+		return
+	}
+	defer client.Close()
+
+	if _, err := client.SendCommand("save"); err != nil {
+		fmt.Printf("Save command failed before backup: %v\n", err)
+		return
+	}
+	fmt.Println("World saved before backup")
 }

@@ -22,6 +22,11 @@ All server configuration is done through environment variables in `.env`. The co
 | `USE_STEAM` | bool | `true` | Enable Steam networking |
 | `PAUSE_ON_EMPTY` | bool | `true` | Pause simulation when no players |
 
+If `ADMIN_PASSWORD` / `RCON_PASSWORD` are left empty, they are generated on
+first start and persisted to `<DATA_DIR>/credentials.env` (inside the `./data`
+volume) so they stay stable across restarts. Retrieve them from that file --
+they are intentionally not printed to the container logs.
+
 ## Network
 
 | Variable | Type | Default | Description |
@@ -41,6 +46,9 @@ All server configuration is done through environment variables in `.env`. The co
 
 ## JVM & Memory
 
+Applied to the server JVM via `_JAVA_OPTIONS` (the PZ start script exposes no
+knobs for these):
+
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `MAX_RAM` | string | `4096m` | Maximum heap size (`-Xmx`) |
@@ -48,12 +56,34 @@ All server configuration is done through environment variables in `.env`. The co
 | `GC_CONFIG` | string | `ZGC` | Garbage collector (`ZGC`, `G1`, `Serial`) |
 | `JVM_EXTRA_ARGS` | string | (empty) | Additional JVM arguments |
 
+## Sandbox (Gameplay)
+
+Sandbox values are not read from the `.ini`; they live in
+`Server/<SERVER_NAME>_SandboxVars.lua`. Any environment variable prefixed with
+`SANDBOX_` is written there with the prefix stripped:
+
+```env
+SANDBOX_Zombies=2
+SANDBOX_DayLength=2
+SANDBOX_WaterShutModifier=20
+```
+
+Every `SANDBOX_*` variable becomes a key in `SandboxVars.lua` with the same
+value. Unset keys fall back to the built-in defaults. See the
+[PZ wiki](https://pzwiki.net/wiki/Sandbox_Options) for valid key names.
+
 ## Mods
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `MOD_NAMES` | string | (empty) | Semicolon-separated mod names |
-| `MOD_WORKSHOP_IDS` | string | (empty) | Semicolon-separated Workshop IDs |
+| `MOD_NAMES` | string | (empty) | Semicolon-separated mod folder names (auto-derived when empty) |
+| `MOD_WORKSHOP_IDS` | string | (empty) | Semicolon-separated Workshop item IDs to download |
+| `MOD_WORKSHOP_COLLECTION_IDS` | string | (empty) | Semicolon-separated Workshop collection IDs; items resolved via the Steam Web API at start |
+| `MOD_UPDATE_ON_START` | bool | `false` | Re-download all workshop items on every start to pick up updates |
+| `STEAM_API_KEY` | string | (empty) | Optional Steam Web API key for collection resolution |
+
+See [MODS.md](MODS.md) for the full guide, including manual (non-Workshop)
+mods dropped into `<DATA_DIR>/Workshop/`.
 
 ## Updates
 
@@ -80,15 +110,22 @@ All server configuration is done through environment variables in `.env`. The co
 | `DISCORD_NOTIFY_START` | bool | `true` | Notify on server start |
 | `DISCORD_NOTIFY_STOP` | bool | `true` | Notify on server stop |
 | `DISCORD_NOTIFY_CRASH` | bool | `true` | Notify on server crash |
-| `DISCORD_NOTIFY_PLAYERS` | bool | `false` | Notify on player join/leave |
 
 ## Container Settings
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `TZ` | string | `UTC` | Timezone (`America/New_York`, `Europe/London`, etc.) |
-| `PUID` | int | `1000` | User ID for file ownership |
-| `PGID` | int | `1000` | Group ID for file ownership |
+
+The container always runs as UID 1000 (`steam`); there is no `PUID`/`PGID`
+mapping. Set the ownership of the host bind mounts to UID 1000 instead:
+
+```bash
+sudo chown -R 1000:1000 data server-files backups
+```
+
+Invalid values for numeric/boolean variables are rejected with a warning and
+fall back to the documented default.
 
 ## Generated Files
 

@@ -1,87 +1,135 @@
-# Workshop Mods
+# Mods
 
-This container supports automatic Steam Workshop mod downloads on server start.
+This container downloads Steam Workshop mods automatically on server start
+and figures out the correct `Mods=` and `WorkshopItems=` settings for you.
 
 ## Quick Setup
 
-1. Create a Steam Workshop collection with your mods
-2. Use [PZ ID Grabber](https://pzidgrabber.com) to extract Mod IDs and Workshop IDs
-3. Set the environment variables:
+### Option A: Steam collection (easiest)
+
+1. Create a [Steam Workshop collection](https://steamcommunity.com/workshop/editcollection/?appid=108600) and add your mods
+2. Copy the collection ID from its URL: `steamcommunity.com/sharedfiles/filedetails/?id=3101645832`
+3. Set it in `.env`:
 
 ```env
-MOD_NAMES=ClaimNonResidential;MoreDescriptionForTraits;SkillRecoveryJournal
+MOD_WORKSHOP_COLLECTION_IDS=3101645832
+```
+
+### Option B: Mod IDs directly
+
+1. Open a mod's Workshop page; the number after `id=` is its Workshop ID: `https://steamcommunity.com/sharedfiles/filedetails/?id=2503743612`
+2. Set them in `.env`:
+
+```env
 MOD_WORKSHOP_IDS=2160432461;2685168362;2503743612
 ```
 
-4. Restart the server:
+### 3. Restart
 
 ```bash
 docker compose down && docker compose up -d
 ```
 
+That's it. `MOD_NAMES` is **optional** -- the entrypoint scans the downloaded
+mods, finds each mod folder (`mod.info`), and writes the `Mods=` line itself.
+You can set it explicitly to pin a load order:
+
+```env
+MOD_NAMES=SkillRecoveryJournal;MoreDescriptionForTraits
+```
+
 ## How It Works
 
-1. On container start, the entrypoint parses `MOD_WORKSHOP_IDS`
-2. For each Workshop ID, it runs `steamcmd workshop_download_item 108600 <id>`
-3. Mods are downloaded to `<server-files>/steamapps/workshop/content/108600/<id>/`
-4. The `.ini` file is written with `Mods=` and `WorkshopItems=` entries
-5. The server loads mods on startup
+1. `MOD_WORKSHOP_IDS` and `MOD_WORKSHOP_COLLECTION_IDS` are resolved to a list of item IDs (collections via the Steam Web API)
+2. All items are downloaded in a **single steamcmd session** to `<server-files>/steamapps/workshop/content/108600/<id>/`
+3. Items already downloaded are skipped unless `MOD_UPDATE_ON_START=true`
+4. If `MOD_NAMES` is empty, mod folder names are auto-detected from the downloads
+5. The `.ini` is written with `Mods=` and `WorkshopItems=` and the server starts
 
-## Finding Mod IDs
+```text
+Resolved workshop collection 3101645832: 3 item(s)
+Downloaded workshop mod 2160432461
+Downloaded workshop mod 2685168362
+Discovered mod "SkillRecoveryJournal" (workshop 2503743612)
+Auto-detected mods (MOD_NAMES): SkillRecoveryJournal
+```
 
-### Method 1: Steam Workshop
+## Manual (non-Workshop) Mods
 
-1. Browse the [Project Zomboid Workshop](https://steamcommunity.com/app/108600/workshop/)
-2. Each mod URL contains its Workshop ID: `https://steamcommunity.com/sharedfiles/filedetails/?id=2160432461`
-3. The number after `id=` is the Workshop ID
-
-### Method 2: PZ ID Grabber
-
-1. Create a [Steam Workshop Collection](https://steamcommunity.com/workshop/editcollection/?appid=108600)
-2. Add all desired mods to the collection
-3. Visit [PZ ID Grabber](https://pzidgrabber.com)
-4. Paste your collection URL
-5. Copy the `Mods=` and `WorkshopItems=` lines
-
-### Method 3: From an existing server
-
-Check an existing `servertest.ini` for the `Mods=` and `WorkshopItems=` values.
-
-## Adding Mods to a Running Server
-
-Mods are loaded at server start. To add mods:
-
-1. Update `.env` with new `MOD_NAMES` and `MOD_WORKSHOP_IDS`
-2. Restart the server:
+Drop unzipped mod folders into `./data/Workshop/` (mounted at
+`/home/steam/Zomboid/Workshop`). Any folder containing a `mod.info` file is
+auto-detected and added to `Mods=` -- no extra configuration needed.
 
 ```bash
-docker compose restart
+unzip my-cool-mod.zip -d data/Workshop/
+docker compose up -d
 ```
+
+## Debugging
+
+List what the container found on disk and check your `MOD_NAMES` against it:
+
+```bash
+docker compose exec zomboid /home/steam/entrypoint mods
+```
+
+Example output:
+
+```text
+Discovered mod "SkillRecoveryJournal" (workshop 2503743612)
+Configured MOD_NAMES: SkillRecoveryJournal;TypoMod
+WARNING: MOD_NAMES entry "TypoMod" has no mod folder on disk - check the spelling
+```
+
+This catches the most common mistake: mod **folder names** differ from
+Workshop **titles** (e.g. "Sapph's Cooking" lives in a folder called
+`SapphsCooking`).
+
+## Updating Mods
+
+By default already-downloaded mods are skipped to keep restarts fast. To check
+for updates every start:
+
+```env
+MOD_UPDATE_ON_START=true
+```
+
+steamcmd re-downloads each item (unchanged items resolve quickly).
 
 ## Troubleshooting
 
-### Mod not showing up
+### Mod not showing up in game
 
-- Verify the Workshop ID is correct
+- Run `entrypoint mods` to verify the folder was detected and `MOD_NAMES` matches
 - Check server logs: `docker compose logs zomboid | grep -i mod`
 - Ensure mods are compatible with your game version (B41 vs B42)
-- Some mods require both client and server installation
+- Some mods require installation on the client side too
+- Clients must subscribe to the same Workshop items on Steam
 
 ### Download fails
 
-- Check internet connectivity
-- Steam may rate-limit anonymous downloads -- wait and retry
-- Ensure `UPDATE_ON_START=true` (default)
+- `WARNING: workshop item <id> did not download` means the item is private,
+  region-locked, or the ID is wrong -- steamcmd downloads anonymously
+- Check internet connectivity and Steam rate limits (retry after a while)
+- Ensure `UPDATE_ON_START=true` (default) so the base game files are present
+
+### Collection won't resolve
+
+- The Steam Web API is keyless best-effort; if it is unreachable you will see
+  `could not resolve workshop collection` and the server starts without those
+  items
+- Set `STEAM_API_KEY` (free, from [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)) to make resolution more reliable
+- Verify the collection is public
 
 ### Server crashes after adding mods
 
-- Check mod load order (some mods must load first)
+- Check mod load order (some mods must load first) -- set `MOD_NAMES` explicitly
 - Disable all mods, enable one at a time to find the culprit
 - Check the in-game console for Lua errors
 
 ## Map Mods
 
-Map mods require additional entries in your `.ini`. If a mod adds maps, you must add them to `MAP_NAMES`:
+Map mods require their map names in `MAP_NAMES`:
 
 ```env
 MAP_NAMES=Muldraugh, KY;West Point, KY;MyCustomMap

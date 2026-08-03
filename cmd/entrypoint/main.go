@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/faudil/project-zomboid-server-docker/internal/backup"
@@ -15,12 +16,23 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		runHealthcheck()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "healthcheck":
+			runHealthcheck()
+			return
+		case "mods":
+			runMods()
+			return
+		}
 	}
 
 	cfg := config.DefaultConfig()
+
+	if err := cfg.EnsurePasswords(); err != nil {
+		fmt.Printf("ERROR resolving credentials: %v\n", err)
+		os.Exit(1)
+	}
 
 	if errs := cfg.Validate(); len(errs) > 0 {
 		fmt.Println("Configuration errors:")
@@ -32,8 +44,43 @@ func main() {
 
 	fmt.Printf("Starting Project Zomboid server: %s\n", cfg.PublicName)
 	fmt.Printf("Server name: %s\n", cfg.ServerName)
-	fmt.Printf("RCON Password: %s\n", cfg.RCONPassword)
-	fmt.Printf("Admin Password: %s\n", cfg.AdminPassword)
+	fmt.Printf("Passwords (auto-generated unless set in .env) are stored in: %s\n", cfg.CredentialsPath())
+
+	// Health server starts early so Docker can observe the install phase.
+	srv := server.NewManager(cfg)
+	healthSrv := health.NewServer(srv)
+	healthSrv.SetStatus("installing")
+	go func() {
+		if err := healthSrv.ListenAndServe(8080); err != nil {
+			fmt.Printf("Health server error: %v\n", err)
+		}
+	}()
+
+	if err := steam.InstallOrUpdate(cfg); err != nil {
+		fmt.Printf("ERROR installing/updating server: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Server files up to date")
+
+	// Resolve collections, download workshop items, and derive mod folder
+	// names before writing the ini so Mods= is populated automatically.
+	modIDs := steam.ResolveModWorkshopIDs(cfg)
+	if len(modIDs) > 0 {
+		cfg.ModWorkshopIDs = strings.Join(modIDs, ";")
+		if err := steam.DownloadWorkshopItems(cfg, modIDs); err != nil {
+			fmt.Printf("ERROR downloading workshop mods: %v\n", err)
+		}
+	}
+
+	if cfg.ModNames == "" {
+		names := steam.DiscoverModNames(cfg)
+		if len(names) > 0 {
+			cfg.ModNames = strings.Join(names, ";")
+			fmt.Printf("Auto-detected mods (MOD_NAMES): %s\n", cfg.ModNames)
+		}
+	} else {
+		steam.WarnMissingMods(cfg)
+	}
 
 	if err := cfg.WriteIni(); err != nil {
 		fmt.Printf("ERROR writing server.ini: %v\n", err)
@@ -46,68 +93,66 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := steam.InstallOrUpdate(cfg); err != nil {
-		fmt.Printf("ERROR installing/updating server: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Println("Server files up to date")
-
-	if err := steam.DownloadWorkshopItems(cfg); err != nil {
-		fmt.Printf("ERROR downloading workshop mods: %v\n", err)
-	}
-
 	discord := webhook.NewDiscord(cfg)
 	discord.NotifyStart()
 
-	srv := server.NewManager(cfg)
+	healthSrv.SetStatus("starting")
 	if err := srv.Start(); err != nil {
 		fmt.Printf("ERROR starting server: %v\n", err)
 		discord.NotifyCrash(err)
 		os.Exit(1)
 	}
 
-	healthSrv := health.NewServer(srv)
-	go func() {
-		if err := healthSrv.ListenAndServe(8080); err != nil {
-			fmt.Printf("Health server error: %v\n", err)
-		}
-	}()
-
 	bk := backup.NewManager(cfg)
 	bk.Scheduler(srv)
 
+	// Single owner of signal handling: the shutdown path below. Manager.Wait()
+	// only waits for the server process to exit.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
 		sig := <-sigCh
 		fmt.Printf("Received %v, shutting down...\n", sig)
-
 		healthSrv.SetStatus("stopping")
 		discord.NotifyStop()
 
+		// A second signal forces immediate exit.
 		go func() {
 			sig := <-sigCh
 			fmt.Printf("Received second %v, forcing exit\n", sig)
 			os.Exit(1)
 		}()
 
+		// Stop the server first (RCON save + quit) so the world is flushed,
+		// then run the final backup against the saved state.
+		if err := srv.Stop(); err != nil {
+			fmt.Printf("Server shutdown failed: %v\n", err)
+			os.Exit(1)
+		}
 		bk.Run() // final backup
-		srv.Stop()
 		os.Exit(0)
 	}()
 
 	healthSrv.SetStatus("healthy")
 
+	// Block until the server exits on its own (crash) or shutdown completes.
 	if err := srv.Wait(); err != nil {
 		fmt.Printf("Server exited: %v\n", err)
 		discord.NotifyCrash(err)
 		os.Exit(1)
 	}
+
+	fmt.Println("Server exited cleanly")
 }
 
 func runHealthcheck() {
 	cfg := config.DefaultConfig()
+	if err := cfg.EnsurePasswords(); err != nil {
+		fmt.Println("Healthcheck failed: cannot load credentials")
+		os.Exit(1)
+	}
+
 	client := server.NewRCONClient(cfg)
 	if err := client.Connect(); err != nil {
 		fmt.Println("Healthcheck failed: RCON connection error")
@@ -121,4 +166,18 @@ func runHealthcheck() {
 	}
 
 	fmt.Println("Healthcheck OK")
+}
+
+// runMods lists the mods discovered on disk and flags MOD_NAMES entries that
+// have no matching folder - useful for debugging load order and typos.
+func runMods() {
+	cfg := config.DefaultConfig()
+	names := steam.DiscoverModNames(cfg)
+	if len(names) == 0 {
+		fmt.Println("No mods found on disk")
+	}
+	if cfg.ModNames != "" {
+		fmt.Printf("Configured MOD_NAMES: %s\n", cfg.ModNames)
+		steam.WarnMissingMods(cfg)
+	}
 }

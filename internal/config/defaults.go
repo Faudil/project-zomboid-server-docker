@@ -3,97 +3,99 @@ package config
 import "os"
 
 type ServerConfig struct {
-	ServerName       string
-	PublicName       string
-	PublicServer     bool
-	ServerPassword   string
-	MaxPlayers       int
-	DefaultPort      int
-	UDPPort          int
-	RCONPort         int
-	RCONPassword     string
-	AdminPassword    string
-	BindIP           string
-	SteamVAC         bool
-	UseSteam         bool
-	PauseOnEmpty     bool
-	AutosaveInterval int
-	MapNames         string
-	PvP              bool
-	ModNames         string
-	ModWorkshopIDs   string
-	MaxRam           string
-	MinRam           string
-	GCConfig         string
-	JvmExtraArgs     string
-	UpdateOnStart    bool
-	ServerBranch     string
-	SteamAppID       string
-	BackupEnabled    bool
-	BackupInterval   int
-	BackupMaxCount   int
-	BackupPath       string
-	DiscordURL       string
-	DiscordStart     bool
-	DiscordStop      bool
-	DiscordCrash     bool
-	DiscordPlayers   bool
-	TZ               string
-	PUID             int
-	PGID             int
-	ServerDir        string
-	DataDir          string
-	GameVersion      string
+	ServerName            string
+	PublicName            string
+	PublicServer          bool
+	ServerPassword        string
+	MaxPlayers            int
+	DefaultPort           int
+	UDPPort               int
+	RCONPort              int
+	RCONPassword          string
+	AdminPassword         string
+	BindIP                string
+	SteamVAC              bool
+	UseSteam              bool
+	PauseOnEmpty          bool
+	AutosaveInterval      int
+	MapNames              string
+	PvP                   bool
+	ModNames              string
+	ModWorkshopIDs        string
+	ModWorkshopCollection string
+	ModUpdateOnStart      bool
+	SteamAPIKey           string
+	MaxRam                string
+	MinRam                string
+	GCConfig              string
+	JvmExtraArgs          string
+	UpdateOnStart         bool
+	ServerBranch          string
+	SteamAppID            string
+	BackupEnabled         bool
+	BackupInterval        int
+	BackupMaxCount        int
+	BackupPath            string
+	DiscordURL            string
+	DiscordStart          bool
+	DiscordStop           bool
+	DiscordCrash          bool
+	TZ                    string
+	ServerDir             string
+	DataDir               string
 
 	SandboxVars map[string]string
 }
 
 func DefaultConfig() *ServerConfig {
-	return &ServerConfig{
-		ServerName:       envStr("SERVER_NAME", "servertest"),
-		PublicName:       envStr("PUBLIC_NAME", "My PZ Server"),
-		PublicServer:     envBool("PUBLIC_SERVER", true),
-		ServerPassword:   envStr("SERVER_PASSWORD", ""),
-		MaxPlayers:       envInt("MAX_PLAYERS", 16),
-		DefaultPort:      envInt("DEFAULT_PORT", 16261),
-		UDPPort:          envInt("UDP_PORT", 16262),
-		RCONPort:         envInt("RCON_PORT", 27015),
-		RCONPassword:     envStr("RCON_PASSWORD", generatePassword()),
-		AdminPassword:    envStr("ADMIN_PASSWORD", generatePassword()),
-		BindIP:           envStr("BIND_IP", "0.0.0.0"),
-		SteamVAC:         envBool("STEAM_VAC", true),
-		UseSteam:         envBool("USE_STEAM", true),
-		PauseOnEmpty:     envBool("PAUSE_ON_EMPTY", true),
-		AutosaveInterval: envInt("AUTOSAVE_INTERVAL", 15),
-		MapNames:         envStr("MAP_NAMES", "Muldraugh, KY"),
-		PvP:              envBool("PVP", true),
-		ModNames:         envStr("MOD_NAMES", ""),
-		ModWorkshopIDs:   envStr("MOD_WORKSHOP_IDS", ""),
-		MaxRam:           envStr("MAX_RAM", "4096m"),
-		MinRam:           envStr("MIN_RAM", "4096m"),
-		GCConfig:         envStr("GC_CONFIG", "ZGC"),
-		JvmExtraArgs:     envStr("JVM_EXTRA_ARGS", ""),
-		UpdateOnStart:    envBool("UPDATE_ON_START", true),
-		ServerBranch:     envStr("SERVER_BRANCH", ""),
-		SteamAppID:       envStr("STEAM_APP_ID", "380870"),
-		BackupEnabled:    envBool("BACKUP_ENABLED", false),
-		BackupInterval:   envInt("BACKUP_INTERVAL", 360),
-		BackupMaxCount:   envInt("BACKUP_MAX_COUNT", 24),
-		BackupPath:       envStr("BACKUP_PATH", "/home/steam/Zomboid/backups"),
-		DiscordURL:       envStr("DISCORD_WEBHOOK_URL", ""),
-		DiscordStart:     envBool("DISCORD_NOTIFY_START", true),
-		DiscordStop:      envBool("DISCORD_NOTIFY_STOP", true),
-		DiscordCrash:     envBool("DISCORD_NOTIFY_CRASH", true),
-		DiscordPlayers:   envBool("DISCORD_NOTIFY_PLAYERS", false),
-		TZ:               envStr("TZ", "UTC"),
-		PUID:             envInt("PUID", 1000),
-		PGID:             envInt("PGID", 1000),
-		ServerDir:        envStr("SERVER_DIR", "/home/steam/pzserver"),
-		DataDir:          envStr("DATA_DIR", "/home/steam/Zomboid"),
-		GameVersion:      envStr("GAME_VERSION", ""),
-		SandboxVars:      map[string]string{},
+	c := &ServerConfig{
+		ServerName:            envStr("SERVER_NAME", "servertest"),
+		PublicName:            envStr("PUBLIC_NAME", "My PZ Server"),
+		PublicServer:          envBool("PUBLIC_SERVER", true),
+		ServerPassword:        envStr("SERVER_PASSWORD", ""),
+		MaxPlayers:            envInt("MAX_PLAYERS", 16),
+		DefaultPort:           envInt("DEFAULT_PORT", 16261),
+		UDPPort:               envInt("UDP_PORT", 16262),
+		RCONPort:              envInt("RCON_PORT", 27015),
+		RCONPassword:          envStr("RCON_PASSWORD", ""),
+		AdminPassword:         envStr("ADMIN_PASSWORD", ""),
+		BindIP:                envStr("BIND_IP", "0.0.0.0"),
+		SteamVAC:              envBool("STEAM_VAC", true),
+		UseSteam:              envBool("USE_STEAM", true),
+		PauseOnEmpty:          envBool("PAUSE_ON_EMPTY", true),
+		AutosaveInterval:      envInt("AUTOSAVE_INTERVAL", 15),
+		MapNames:              envStr("MAP_NAMES", "Muldraugh, KY"),
+		PvP:                   envBool("PVP", true),
+		ModNames:              envStr("MOD_NAMES", ""),
+		ModWorkshopIDs:        envStr("MOD_WORKSHOP_IDS", ""),
+		ModWorkshopCollection: envStr("MOD_WORKSHOP_COLLECTION_IDS", ""),
+		ModUpdateOnStart:      envBool("MOD_UPDATE_ON_START", false),
+		SteamAPIKey:           envStr("STEAM_API_KEY", ""),
+		MaxRam:                envStr("MAX_RAM", "4096m"),
+		MinRam:                envStr("MIN_RAM", "4096m"),
+		GCConfig:              envStr("GC_CONFIG", "ZGC"),
+		JvmExtraArgs:          envStr("JVM_EXTRA_ARGS", ""),
+		UpdateOnStart:         envBool("UPDATE_ON_START", true),
+		ServerBranch:          envStr("SERVER_BRANCH", ""),
+		SteamAppID:            envStr("STEAM_APP_ID", "380870"),
+		BackupEnabled:         envBool("BACKUP_ENABLED", false),
+		BackupInterval:        envInt("BACKUP_INTERVAL", 360),
+		BackupMaxCount:        envInt("BACKUP_MAX_COUNT", 24),
+		BackupPath:            envStr("BACKUP_PATH", "/home/steam/Zomboid/backups"),
+		DiscordURL:            envStr("DISCORD_WEBHOOK_URL", ""),
+		DiscordStart:          envBool("DISCORD_NOTIFY_START", true),
+		DiscordStop:           envBool("DISCORD_NOTIFY_STOP", true),
+		DiscordCrash:          envBool("DISCORD_NOTIFY_CRASH", true),
+		TZ:                    envStr("TZ", "UTC"),
+		ServerDir:             envStr("SERVER_DIR", "/home/steam/pzserver"),
+		DataDir:               envStr("DATA_DIR", "/home/steam/Zomboid"),
+		SandboxVars:           map[string]string{},
 	}
 
+	c.loadSandboxEnv()
+	c.ParseModWorkshopIDs()
+
+	return c
 }
 
 func (c *ServerConfig) ServerIniPath() string {

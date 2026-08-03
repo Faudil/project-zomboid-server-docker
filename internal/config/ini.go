@@ -32,6 +32,7 @@ func (c *ServerConfig) WriteIni() error {
 	sb.WriteString(fmt.Sprintf("RCONPort=%d\n", c.RCONPort))
 	sb.WriteString(fmt.Sprintf("RCONPassword=%s\n", c.RCONPassword))
 	sb.WriteString(fmt.Sprintf("SteamPort2=%d\n", c.UDPPort+1))
+	sb.WriteString(fmt.Sprintf("BindIP=%s\n", c.BindIP))
 
 	pauseEmpty := "true"
 	if !c.PauseOnEmpty {

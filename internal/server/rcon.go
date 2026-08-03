@@ -78,8 +78,9 @@ func (r *RCONClient) SendCommand(cmd string) (string, error) {
 			return "", fmt.Errorf("reading RCON response: %w", err)
 		}
 		response.WriteString(line)
-		if !strings.Contains(line, "RCON:") {
-			continue
+		// PZ terminates each command response with an "RCON: " prompt line.
+		if strings.Contains(line, "RCON:") {
+			break
 		}
 	}
 

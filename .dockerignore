@@ -1,3 +1,7 @@
+.git
+docs/
+.github/
+CHANGELOG.md
 *.tar.gz
 *.zip
 data/
@@ -6,3 +10,4 @@ backups/
 .env
 /debug
 /output
+/entrypoint

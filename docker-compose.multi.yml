@@ -1,15 +1,15 @@
 x-common: &common
+  image: ghcr.io/faudil/project-zomboid-server-docker:latest
   restart: unless-stopped
   stop_grace_period: 60s
+  env_file:
+    - .env
   volumes:
-    - ./data-${INSTANCE}:${DATA_DIR:-/home/steam/Zomboid}
     - ./server-files:/home/steam/pzserver
-    - ./backups-${INSTANCE}:${BACKUP_PATH:-/home/steam/Zomboid/backups}
 
 services:
   zomboid-server1:
     <<: *common
-    image: ghcr.io/faudil/project-zomboid-server-docker:latest
     container_name: pz-server1
     environment:
       - SERVER_NAME=server1
@@ -18,16 +18,16 @@ services:
       - UDP_PORT=16262
       - RCON_PORT=27015
       - MAX_PLAYERS=16
-    env_file:
-      - .env
     ports:
       - "16261:16261/udp"
       - "16262:16262/udp"
       - "27015:27015/tcp"
+    volumes:
+      - ./data-server1:/home/steam/Zomboid
+      - ./backups-server1:/home/steam/Zomboid/backups
 
   zomboid-server2:
     <<: *common
-    image: ghcr.io/faudil/project-zomboid-server-docker:latest
     container_name: pz-server2
     environment:
       - SERVER_NAME=server2
@@ -36,9 +36,10 @@ services:
       - UDP_PORT=16264
       - RCON_PORT=27016
       - MAX_PLAYERS=8
-    env_file:
-      - .env
     ports:
       - "16263:16263/udp"
       - "16264:16264/udp"
       - "27016:27016/tcp"
+    volumes:
+      - ./data-server2:/home/steam/Zomboid
+      - ./backups-server2:/home/steam/Zomboid/backups

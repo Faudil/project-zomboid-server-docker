@@ -5,11 +5,13 @@ RUN apk add --no-cache git=2.49.1-r0
 WORKDIR /build
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o /entrypoint ./cmd/entrypoint
 
 FROM cm2network/steamcmd:root
@@ -45,7 +47,9 @@ EXPOSE 16261/udp 16262/udp 27015/tcp 8080/tcp
 VOLUME ["/home/steam/Zomboid"]
 VOLUME ["/home/steam/pzserver"]
 
-HEALTHCHECK --interval=60s --timeout=10s --retries=3 --start-period=120s \
+# The start period must cover the first-run SteamCMD install (5-10 minutes),
+# during which RCON is not yet available and the healthcheck legitimately fails.
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 --start-period=600s \
     CMD ["/healthcheck.sh"]
 
 STOPSIGNAL SIGTERM
