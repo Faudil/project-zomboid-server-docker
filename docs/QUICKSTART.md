@@ -22,7 +22,7 @@ docker run -d \
   faudil/project-zomboid-server:latest
 ```
 
-Set `ADMIN_PASSWORD` and `RCON_PASSWORD` to secure values before running. First launch downloads the server files via SteamCMD (~5-10 minutes depending on internet speed). Skip to [Monitor](#6-monitor).
+Set `ADMIN_PASSWORD` and `RCON_PASSWORD` to secure values before running. First launch downloads the server files via DepotDownloader (~5-10 minutes depending on internet speed). Skip to [Monitor](#6-monitor).
 
 ### Option B: Docker Compose (recommended for configuration)
 
@@ -66,7 +66,7 @@ on start, run the `chown` above and start again.
 docker compose up -d
 ```
 
-First launch downloads the server files via SteamCMD (~5-10 minutes depending on internet speed).
+First launch downloads the server files via DepotDownloader (~5-10 minutes depending on internet speed).
 
 ## 6. Monitor
 

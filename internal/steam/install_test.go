@@ -183,12 +183,12 @@ func TestDownloadWorkshopItemsForcesUpdate(t *testing.T) {
 	writeModDir(t, itemDir, false)
 	cfg.ModUpdateOnStart = true
 
-	oldRun := runSteamCmd
-	runSteamCmd = func(args ...string) error {
+	oldRun := runSteamCmdCapture
+	runSteamCmdCapture = func(args ...string) (string, error) {
 		// Simulate a successful batch: place the item on disk.
-		return os.MkdirAll(itemDir, 0755)
+		return "Success", os.MkdirAll(itemDir, 0755)
 	}
-	defer func() { runSteamCmd = oldRun }()
+	defer func() { runSteamCmdCapture = oldRun }()
 
 	// ModUpdateOnStart bypasses the existence check and the batch must run.
 	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
@@ -200,19 +200,19 @@ func TestDownloadWorkshopItemsRetriesOnce(t *testing.T) {
 	cfg := testConfig(t)
 	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
 
-	oldRun := runSteamCmd
+	oldRun := runSteamCmdCapture
 	oldDelay := updateRetryDelay
 	calls := 0
-	runSteamCmd = func(args ...string) error {
+	runSteamCmdCapture = func(args ...string) (string, error) {
 		calls++
 		if calls == 1 {
-			return fmt.Errorf("exit status 7")
+			return "", fmt.Errorf("exit status 7")
 		}
-		return os.MkdirAll(itemDir, 0755)
+		return "Success", os.MkdirAll(itemDir, 0755)
 	}
 	updateRetryDelay = time.Millisecond
 	defer func() {
-		runSteamCmd = oldRun
+		runSteamCmdCapture = oldRun
 		updateRetryDelay = oldDelay
 	}()
 
@@ -227,20 +227,49 @@ func TestDownloadWorkshopItemsRetriesOnce(t *testing.T) {
 	}
 }
 
+func TestDownloadWorkshopItemsRetriesOnFailureLine(t *testing.T) {
+	cfg := testConfig(t)
+	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
+
+	oldRun := runSteamCmdCapture
+	oldDelay := updateRetryDelay
+	calls := 0
+	runSteamCmdCapture = func(args ...string) (string, error) {
+		calls++
+		if calls == 1 {
+			// steamcmd exits 0 even when the item fails to download.
+			return "ERROR! Download item 2503743612 failed (No match)", nil
+		}
+		return "Success", os.MkdirAll(itemDir, 0755)
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmdCapture = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
+		t.Errorf("DownloadWorkshopItems: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("steamcmd batch ran %d times, want 2 (one retry)", calls)
+	}
+}
+
 func TestDownloadWorkshopItemsGivesUpAfterRetry(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SteamUser = ""
 
-	oldRun := runSteamCmd
+	oldRun := runSteamCmdCapture
 	oldDelay := updateRetryDelay
 	calls := 0
-	runSteamCmd = func(args ...string) error {
+	runSteamCmdCapture = func(args ...string) (string, error) {
 		calls++
-		return fmt.Errorf("exit status 7")
+		return "", fmt.Errorf("exit status 7")
 	}
 	updateRetryDelay = time.Millisecond
 	defer func() {
-		runSteamCmd = oldRun
+		runSteamCmdCapture = oldRun
 		updateRetryDelay = oldDelay
 	}()
 
@@ -304,6 +333,7 @@ func TestSteamFailureDetection(t *testing.T) {
 		{"ERROR! Failed to install app '380870' (Missing file permissions)", true},
 		{"ERROR! Failed to install app '380870' (No subscription)", true},
 		{"...\nERROR! Failed to install app '380870' (Missing configuration)\n", true},
+		{"ERROR! Download item 2503743612 failed (No match)", true},
 		{"Success! App '380870' fully installed", false},
 		{"Connecting anonymously to Steam Public...OK\nWaiting for user info...OK", false},
 	}
@@ -339,21 +369,21 @@ func TestInstallOrUpdateRetriesTransientFailure(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SteamUser = ""
 
-	oldRun := runSteamCmdCapture
+	oldRun := runDepotDownloader
 	oldDelay := updateRetryDelay
-	runSteamCmdCapture = func(args ...string) (string, error) {
-		// Transient Valve-side regression, then success.
+	runDepotDownloader = func(args ...string) (string, error) {
+		// Transient failure, then success.
 		if _, err := os.Stat(startScriptPath(cfg)); err != nil {
 			if err := os.WriteFile(startScriptPath(cfg), []byte("#!/bin/bash\n"), 0755); err != nil {
 				t.Fatal(err)
 			}
-			return "ERROR! Failed to install app '380870' (Missing file permissions)", nil
+			return "", fmt.Errorf("connection reset")
 		}
-		return "Success! App '380870' fully installed", nil
+		return "Total downloaded: 100 bytes", nil
 	}
 	updateRetryDelay = time.Millisecond
 	defer func() {
-		runSteamCmdCapture = oldRun
+		runDepotDownloader = oldRun
 		updateRetryDelay = oldDelay
 	}()
 
@@ -366,16 +396,16 @@ func TestInstallOrUpdateExhaustsRetries(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SteamUser = ""
 
-	oldRun := runSteamCmdCapture
+	oldRun := runDepotDownloader
 	oldDelay := updateRetryDelay
 	calls := 0
-	runSteamCmdCapture = func(args ...string) (string, error) {
+	runDepotDownloader = func(args ...string) (string, error) {
 		calls++
-		return "ERROR! Failed to install app '380870' (Missing file permissions)", nil
+		return "", fmt.Errorf("connection reset")
 	}
 	updateRetryDelay = time.Millisecond
 	defer func() {
-		runSteamCmdCapture = oldRun
+		runDepotDownloader = oldRun
 		updateRetryDelay = oldDelay
 	}()
 
@@ -384,7 +414,7 @@ func TestInstallOrUpdateExhaustsRetries(t *testing.T) {
 		t.Fatal("InstallOrUpdate should fail after exhausting retries")
 	}
 	if calls != maxUpdateAttempts {
-		t.Errorf("steamcmd ran %d times, want %d", calls, maxUpdateAttempts)
+		t.Errorf("DepotDownloader ran %d times, want %d", calls, maxUpdateAttempts)
 	}
 }
 
@@ -393,16 +423,16 @@ func TestInstallOrUpdatePermanentFailureNoRetry(t *testing.T) {
 	cfg.SteamUser = "myuser"
 	cfg.SteamPass = "mypass"
 
-	oldRun := runSteamCmdCapture
+	oldRun := runDepotDownloader
 	oldDelay := updateRetryDelay
 	calls := 0
-	runSteamCmdCapture = func(args ...string) (string, error) {
+	runDepotDownloader = func(args ...string) (string, error) {
 		calls++
-		return "ERROR! Failed to login: Invalid Password", nil
+		return "Error: Your login attempt has failed. Your password was incorrect", fmt.Errorf("exit status 5")
 	}
 	updateRetryDelay = time.Millisecond
 	defer func() {
-		runSteamCmdCapture = oldRun
+		runDepotDownloader = oldRun
 		updateRetryDelay = oldDelay
 	}()
 
@@ -410,6 +440,49 @@ func TestInstallOrUpdatePermanentFailureNoRetry(t *testing.T) {
 		t.Fatal("InstallOrUpdate should fail on bad credentials")
 	}
 	if calls != 1 {
-		t.Errorf("steamcmd ran %d times, want 1 (no retry on permanent failure)", calls)
+		t.Errorf("DepotDownloader ran %d times, want 1 (no retry on permanent failure)", calls)
+	}
+}
+
+func TestInstallArgs(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamAppID = "380870"
+
+	// Anonymous, default branch.
+	want := []string{"-app", "380870", "-dir", cfg.ServerDir, "-validate"}
+	if got := installArgs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("installArgs = %v, want %v", got, want)
+	}
+
+	// Explicit branch.
+	cfg.ServerBranch = "legacy41"
+	want = []string{"-app", "380870", "-dir", cfg.ServerDir, "-validate", "-branch", "legacy41"}
+	if got := installArgs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("installArgs with branch = %v, want %v", got, want)
+	}
+
+	// Credentials.
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
+	want = []string{"-app", "380870", "-dir", cfg.ServerDir, "-validate", "-branch", "legacy41", "-username", "myuser", "-password", "mypass"}
+	if got := installArgs(cfg); !reflect.DeepEqual(got, want) {
+		t.Errorf("installArgs with credentials = %v, want %v", got, want)
+	}
+}
+
+func TestDepotPermanentFailure(t *testing.T) {
+	cases := []struct {
+		output string
+		want   bool
+	}{
+		{"Your login attempt has failed. Your password was incorrect", true},
+		{"Two-factor code required", true},
+		{"Total downloaded: 2098615632 bytes from 3 depots", false},
+		{"Connection to Steam failed. Trying again (#1)", false},
+	}
+	for _, tc := range cases {
+		if got := depotPermanentFailure(tc.output); got != tc.want {
+			t.Errorf("depotPermanentFailure(%q) = %v, want %v", tc.output, got, tc.want)
+		}
 	}
 }

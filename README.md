@@ -8,7 +8,7 @@ A Docker container for the Project Zomboid dedicated server. Built from the grou
 
 ## Features
 
-- **Automatic installation** -- Fetches and validates server files via SteamCMD on first start
+- **Automatic installation** -- Fetches and validates server files via DepotDownloader on first start
 - **Graceful shutdown** -- `docker stop` triggers `save` then `quit` via RCON
 - **Healthcheck** -- RCON-based health monitoring, Docker native `HEALTHCHECK`
 - **Workshop mods** -- Auto-download mods from Steam Workshop on start
@@ -116,9 +116,9 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference. The most i
 | `MOD_WORKSHOP_IDS` | (empty) | Workshop mod IDs (semicolon-separated) |
 | `MOD_WORKSHOP_COLLECTION_IDS` | (empty) | Steam collection IDs; items resolved automatically |
 | `MOD_NAMES` | auto-detected | Mod folder names (empty = derived from downloads) |
-| `UPDATE_ON_START` | `true` | Auto-update server files |
+| `UPDATE_ON_START` | `true` | Auto-download/verify server files on start |
 | `SERVER_BRANCH` | (empty) | Beta branch (`unstable`, `legacy41`) |
-| `STEAM_USER` / `STEAM_PASS` | (empty) | Optional Steam account (owns Project Zomboid) — bypasses Steam's intermittent anonymous download rate-limiting and fixes failing workshop downloads |
+| `STEAM_USER` / `STEAM_PASS` | (empty) | Optional Steam account (owns Project Zomboid) — only needed for private branches or workshop mods when anonymous downloads fail |
 | `BACKUP_ENABLED` | `false` | Enable auto-backups |
 | `DISCORD_WEBHOOK_URL` | (empty) | Discord webhook URL |
 

@@ -89,23 +89,19 @@ mods dropped into `<DATA_DIR>/Workshop/`.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `UPDATE_ON_START` | bool | `true` | Run SteamCMD on container start |
+| `UPDATE_ON_START` | bool | `true` | Download/verify server files on container start |
 | `SERVER_BRANCH` | string | (empty) | Beta branch (`unstable`, `legacy41`, etc.) |
 | `STEAM_APP_ID` | string | `380870` | PZ Dedicated Server App ID |
 | `STEAM_USER` | string | (empty) | Steam account for downloading server files |
 | `STEAM_PASS` | string | (empty) | Steam account password |
 | `STEAM_GUARD_CODE` | string | (empty) | One-time Steam Guard code from your email (first login only) |
 
-**Note:** Steam intermittently fails anonymous `app_update` downloads with
-cryptic errors (`Failed to install app '380870' (Missing file permissions)` /
-`Missing configuration`). This is Steam-side rate-limiting/flakiness of
-anonymous downloads, affects all free dedicated server apps, and clears up on
-its own. The entrypoint retries for ~6 minutes per start and docker's restart
-policy keeps trying afterwards; partial downloads resume where they left off.
-The reliable workaround is `STEAM_USER` and `STEAM_PASS` (an account that owns
-Project Zomboid), which bypasses anonymous rate-limiting entirely. If your
-account uses Steam Guard, put the code from your email into
-`STEAM_GUARD_CODE` on the first login; steamcmd remembers the login afterwards.
+The server files are downloaded with **DepotDownloader**, which uses the same
+Steam3 protocol as SteamCMD but downloads anonymously reliably (Steam's
+backend intermittently rejects SteamCMD's `app_update` for anonymous
+sessions). Anonymous downloads work out of the box. If your account uses
+Steam Guard, put the code from your email into `STEAM_GUARD_CODE` on the
+first login; the session is remembered afterwards.
 
 ## Backups
 

@@ -43,6 +43,8 @@
 - Health endpoint reports `installing` / `starting` / `healthy` / `stopping` status
 
 ### Mods
+- Server files are now downloaded with DepotDownloader instead of SteamCMD's `app_update`. Steam's backend intermittently rejects anonymous `app_update` jobs (verified across games and IPs: license and appinfo are granted, but the download job is paused ~90% of the time); DepotDownloader's anonymous path downloads 380870 reliably
+- Workshop mod downloads now capture steamcmd output and retry on detected failures (steamcmd exits 0 even when a workshop item fails)
 - `MOD_NAMES` is now optional: mod folder names are auto-detected from downloaded workshop items and manual mods (folders containing `mod.info`)
 - `MOD_WORKSHOP_COLLECTION_IDS` resolves Steam workshop collections to item IDs via the Steam Web API (keyless best-effort, `STEAM_API_KEY` supported)
 - Workshop items download in a single steamcmd batch instead of one process per mod

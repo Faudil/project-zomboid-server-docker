@@ -39,36 +39,24 @@ The JVM heap size is controlled by `MAX_RAM`. Default is 4096m (4GB). The actual
 If the container exits with:
 
 ```text
-ERROR installing/updating server: steamcmd could not download app 380870 ...
+ERROR installing/updating server: could not download app 380870 after 6 attempts
 ```
 
-Steam intermittently fails anonymous `app_update` downloads with cryptic
-errors (`Missing file permissions`, `Missing configuration`, `Disk write
-failure`). This is Steam-side rate-limiting/flakiness of anonymous downloads
-and affects all free dedicated server apps, not just Project Zomboid. It
-clears up on its own, and the entrypoint already:
+The server files are downloaded with DepotDownloader, which works reliably
+anonymously. A persistent failure here is almost always one of:
 
-1. Retries for ~6 minutes (60s between attempts) before exiting
-2. Lets docker's restart policy keep retrying after that
-3. Resumes partial downloads from where they left off
+1. **No network access from the container** — check `docker compose logs`
+   for connection errors, and verify the host can reach Steam
+2. **`STEAM_USER` set without `STEAM_PASS`** — the entrypoint refuses to run
+   to avoid an interactive password prompt hanging forever
+3. **Bad credentials or expired Steam Guard code** — if you use
+   `STEAM_USER`/`STEAM_PASS`, make sure the account owns Project Zomboid and
+   the `STEAM_GUARD_CODE` from your email is current
 
-If it keeps failing for a long time, the reliable fix is Steam credentials
-(an account that owns Project Zomboid), which bypass the anonymous
-rate-limiting:
-
-```env
-STEAM_USER=your_steam_account
-STEAM_PASS=your_steam_password
-```
-
-If your account has Steam Guard enabled, add the one-time code from your
-email on the first login:
-
-```env
-STEAM_GUARD_CODE=ABC12
-```
-
-The login is remembered afterwards, so `STEAM_GUARD_CODE` is only needed once.
+If the server files were downloaded elsewhere (e.g. via the Steam client),
+you can skip the download entirely: place the files in the `server-files`
+volume, set `UPDATE_ON_START=false`, and restart. The entrypoint skips
+SteamCMD/DepotDownloader whenever `start-server.sh` already exists.
 
 ## Workshop mods not downloading
 

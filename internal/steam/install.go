@@ -18,6 +18,10 @@ import (
 
 const steamcmdPath = "/home/steam/steamcmd/steamcmd.sh"
 
+// depotDownloaderPath is the DepotDownloader binary installed in the image.
+// It replaces SteamCMD's app_update for downloading the server files.
+const depotDownloaderPath = "/usr/local/bin/depotdownloader"
+
 // workshopAppID is the Steam Workshop app id for Project Zomboid.
 const workshopAppID = "108600"
 
@@ -25,28 +29,36 @@ const workshopAppID = "108600"
 // collections. Overridable in tests.
 var collectionAPI = "https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/"
 
-// runSteamCmd runs steamcmd streaming output to the container logs.
-// Overridable in tests.
-var runSteamCmd = runSteamCmdImpl
-
-func runSteamCmdImpl(args ...string) error {
-	cmd := exec.Command(steamcmdPath, args...)
-	cmd.Dir = filepath.Dir(steamcmdPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(), "HOME=/home/steam")
-	return cmd.Run()
-}
-
 // runSteamCmdCapture runs steamcmd, streaming output to stdout while keeping
-// a copy for failure detection. steamcmd exits 0 even when app_update fails,
-// so the captured output is the only reliable signal. Overridable in tests.
+// a copy for failure detection. steamcmd exits 0 even when commands fail, so
+// the captured output is the only reliable signal. Overridable in tests.
 var runSteamCmdCapture = runSteamCmdCaptureImpl
 
 func runSteamCmdCaptureImpl(args ...string) (string, error) {
 	cmd := exec.Command(steamcmdPath, args...)
 	cmd.Dir = filepath.Dir(steamcmdPath)
 	cmd.Env = append(os.Environ(), "HOME=/home/steam")
+
+	var buf bytes.Buffer
+	out := io.MultiWriter(os.Stdout, &buf)
+	cmd.Stdout = out
+	cmd.Stderr = out
+
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+// runDepotDownloader runs DepotDownloader, streaming output to stdout while
+// keeping a copy for failure detection. Unlike steamcmd it exits non-zero on
+// failure, but the output still carries the useful error context.
+// Overridable in tests.
+var runDepotDownloader = runDepotDownloaderImpl
+
+func runDepotDownloaderImpl(args ...string) (string, error) {
+	cmd := exec.Command(depotDownloaderPath, args...)
+	// The self-contained .NET build runs without ICU in globalization-invariant
+	// mode, avoiding an extra ~200MB of locale packages in the image.
+	cmd.Env = append(os.Environ(), "HOME=/home/steam", "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1")
 
 	var buf bytes.Buffer
 	out := io.MultiWriter(os.Stdout, &buf)
@@ -74,22 +86,38 @@ func startScriptPath(cfg *config.ServerConfig) string {
 	return cfg.ServerDir + "/start-server.sh"
 }
 
-// Steam intermittently fails anonymous app_update downloads with cryptic
-// errors ("Missing file permissions", "Missing configuration", "Disk write
-// failure", "state is 0x..." after update job). This is Steam-side
-// rate-limiting/flakiness of anonymous downloads and affects all free
-// dedicated server apps; it works again after a while. Retry with a
-// meaningful backoff so a working window is eventually caught. Partial
-// downloads are resumed by steamcmd on each attempt.
 const maxUpdateAttempts = 6
 
 var updateRetryDelay = 60 * time.Second
 
-// permanentFailure reports whether a steamcmd failure line describes a
+// installArgs builds the DepotDownloader invocation for the server files.
+// Anonymous by default; STEAM_USER/STEAM_PASS are passed through when set.
+func installArgs(cfg *config.ServerConfig) []string {
+	args := []string{
+		"-app", cfg.SteamAppID,
+		"-dir", cfg.ServerDir,
+		"-validate",
+	}
+	if cfg.ServerBranch != "" {
+		args = append(args, "-branch", cfg.ServerBranch)
+	}
+	if cfg.SteamUser != "" {
+		args = append(args, "-username", cfg.SteamUser, "-password", cfg.SteamPass)
+	}
+	return args
+}
+
+// depotPermanentFailure reports whether DepotDownloader output describes a
 // problem retrying cannot fix (e.g. bad credentials).
-func permanentFailure(msg string) bool {
-	lower := strings.ToLower(msg)
-	for _, marker := range []string{"invalid password", "password incorrect", "steam guard", "two-factor", "account does not"} {
+func depotPermanentFailure(output string) bool {
+	lower := strings.ToLower(output)
+	for _, marker := range []string{
+		"password was incorrect",
+		"invalid password",
+		"steam guard",
+		"two-factor",
+		"not valid for this account",
+	} {
 		if strings.Contains(lower, marker) {
 			return true
 		}
@@ -97,6 +125,11 @@ func permanentFailure(msg string) bool {
 	return false
 }
 
+// InstallOrUpdate downloads the dedicated server files with DepotDownloader,
+// which uses the same Steam3 protocol as steamcmd but downloads anonymously
+// reliably (steamcmd's app_update is intermittently rejected by Steam's
+// backend). Retries with a backoff as a safety net; permanent failures such
+// as bad credentials fail immediately.
 func InstallOrUpdate(cfg *config.ServerConfig) error {
 	if !cfg.UpdateOnStart {
 		if _, err := os.Stat(startScriptPath(cfg)); err == nil {
@@ -105,56 +138,43 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 	}
 
 	if cfg.SteamUser != "" && cfg.SteamPass == "" {
-		return fmt.Errorf("STEAM_PASS is required when STEAM_USER is set (steamcmd would otherwise prompt for a password and hang)")
+		return fmt.Errorf("STEAM_PASS is required when STEAM_USER is set (DepotDownloader would otherwise prompt for a password and hang)")
 	}
 
-	updateCmd := fmt.Sprintf("app_update %s validate", cfg.SteamAppID)
-	if cfg.ServerBranch != "" {
-		updateCmd = fmt.Sprintf("app_update %s -beta %s validate", cfg.SteamAppID, cfg.ServerBranch)
-	}
+	args := installArgs(cfg)
 
 	for attempt := 1; attempt <= maxUpdateAttempts; attempt++ {
 		if attempt > 1 {
-			fmt.Printf("Steam download failed - Steam intermittently rate-limits anonymous downloads. Retrying in 60s (attempt %d/%d)...\n", attempt, maxUpdateAttempts)
+			fmt.Printf("Server download failed, retrying in 60s (attempt %d/%d)...\n", attempt, maxUpdateAttempts)
 			time.Sleep(updateRetryDelay)
 		}
 
-		err := runInstallAttempt(cfg, updateCmd)
+		output, err := runInstallAttempt(cfg, args)
 		if err == nil {
 			return nil
 		}
-		fmt.Printf("Steam download attempt %d/%d failed: %v\n", attempt, maxUpdateAttempts, err)
+		fmt.Printf("Server download attempt %d/%d failed: %v\n", attempt, maxUpdateAttempts, err)
 
 		// Don't burn the remaining attempts on a problem retrying cannot fix.
-		if permanentFailure(err.Error()) {
+		if depotPermanentFailure(output) {
 			return err
 		}
 	}
 
-	return fmt.Errorf("steamcmd could not download app %s after %d attempts (%d minutes). Steam is intermittently failing anonymous downloads - docker's restart policy will keep retrying, and partial downloads are resumed. Setting STEAM_USER/STEAM_PASS (an account that owns Project Zomboid) bypasses the anonymous rate-limiting entirely", cfg.SteamAppID, maxUpdateAttempts, maxUpdateAttempts)
+	return fmt.Errorf("could not download app %s after %d attempts", cfg.SteamAppID, maxUpdateAttempts)
 }
 
-func runInstallAttempt(cfg *config.ServerConfig, updateCmd string) error {
-	args := []string{
-		"+force_install_dir", cfg.ServerDir,
-	}
-	args = append(args, steamLoginArgs(cfg)...)
-	args = append(args, updateCmd, "+quit")
-
-	output, err := runSteamCmdCapture(args...)
+func runInstallAttempt(cfg *config.ServerConfig, args []string) (string, error) {
+	output, err := runDepotDownloader(args...)
 	if err != nil {
-		return fmt.Errorf("steamcmd install/update failed: %w", err)
-	}
-
-	if msg := steamFailure(output); msg != "" {
-		return fmt.Errorf("%s", msg)
+		return output, fmt.Errorf("DepotDownloader failed: %w", err)
 	}
 
 	if _, err := os.Stat(startScriptPath(cfg)); err != nil {
-		return fmt.Errorf("server files were not installed (start-server.sh missing)")
+		return output, fmt.Errorf("server files were not installed (start-server.sh missing)")
 	}
 
-	return nil
+	return output, nil
 }
 
 // steamFailure returns the first steamcmd error line found in the output,
@@ -164,6 +184,7 @@ func steamFailure(output string) string {
 		lower := strings.ToLower(line)
 		for _, marker := range []string{
 			"failed to install app",
+			"download item",
 			"no subscription",
 			"missing file permissions",
 			"missing configuration",
@@ -320,14 +341,25 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 	args = append(args, workshopBatchArgs(cfg, toDownload)...)
 
 	// Anonymous downloads are intermittently rate-limited by Steam; retry the
-	// batch once before giving up on this start.
+	// batch once before giving up on this start. Output is captured because
+	// steamcmd exits 0 even when a workshop item fails to download.
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runSteamCmd(args...); err != nil {
+		output, err := runSteamCmdCapture(args...)
+		if err != nil {
 			if attempt == 2 {
 				fmt.Printf("WARNING: workshop mod download failed: %v\n", err)
 				return nil
 			}
 			fmt.Println("Workshop mod download failed (Steam intermittently rate-limits anonymous downloads), retrying in 60s...")
+			time.Sleep(updateRetryDelay)
+			continue
+		}
+		if msg := steamFailure(output); msg != "" {
+			if attempt == 2 {
+				fmt.Printf("WARNING: workshop mod download reported an error: %s\n", msg)
+				return nil
+			}
+			fmt.Println("Workshop mod download reported an error, retrying in 60s...")
 			time.Sleep(updateRetryDelay)
 			continue
 		}
