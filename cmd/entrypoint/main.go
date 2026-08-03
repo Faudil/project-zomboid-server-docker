@@ -119,6 +119,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// First boot with anonymous Steam: steamcmd cannot download workshop items
+	// (Steam rejects anonymous downloads), but the running server downloads
+	// them itself from WorkshopItems=. Wait for the downloads, and restart
+	// whenever the on-disk mod set grew since this boot started, so Mods= is
+	// regenerated and the new mods load. Converges within a couple of restarts.
+	bootModCount := steam.ModCountOnDisk(cfg)
+	if len(modIDs) > 0 && cfg.SteamUser == "" && cfg.UseSteam {
+		go func() {
+			if steam.WaitForModDownloads(cfg, modIDs) && steam.ModCountOnDisk(cfg) > bootModCount {
+				fmt.Println("Workshop mods downloaded by the server; restarting once to load them")
+				_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+			}
+		}()
+	}
+
 	bk := backup.NewManager(cfg)
 	bk.Scheduler(srv)
 

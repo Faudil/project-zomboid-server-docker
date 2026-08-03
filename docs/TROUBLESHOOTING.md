@@ -66,9 +66,14 @@ SteamCMD/DepotDownloader whenever `start-server.sh` already exists.
    docker compose exec zomboid ping google.com
    ```
 3. Set `UPDATE_ON_START=true` (default)
-4. If the log says `workshop item <id> did not download` for a public mod,
-   anonymous workshop downloads may be failing (Steam-side). Set
-   `STEAM_USER`/`STEAM_PASS` in `.env` and restart
+4. Anonymous Steam sessions can no longer download workshop items (Steam-side
+   change). Without `STEAM_USER`/`STEAM_PASS` the running server downloads
+   them itself from `WorkshopItems=` -- you should see
+   `Workshop: download ...` in the logs and the container restarting once
+   when it is done
+5. If nothing downloads at all, set `STEAM_USER`/`STEAM_PASS` (a Steam
+   account, ideally one owning Project Zomboid) in `.env` and restart --
+   downloads then happen before the server starts
 
 ## Permission errors
 

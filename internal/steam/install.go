@@ -434,6 +434,12 @@ func parseCollectionPage(page string) ([]string, error) {
 // session. Items already on disk are skipped unless ModUpdateOnStart is set.
 // steamcmd's exit code does not reflect per-item failures, so each item's
 // presence is verified afterwards.
+//
+// With an anonymous Steam session nothing is downloaded: Steam rejects
+// anonymous workshop_download_item requests silently since 2024. The running
+// PZ server downloads the items itself from WorkshopItems=, so the entrypoint
+// relies on that path (and restarts once to load them, see WaitForModDownloads).
+// STEAM_USER/STEAM_PASS makes the pre-download work here instead.
 func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 	dir := workshopDir(cfg)
 	var toDownload []string
@@ -450,6 +456,15 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 		return nil
 	}
 
+	if cfg.SteamUser == "" {
+		if !cfg.UseSteam {
+			fmt.Println("WARNING: workshop mods cannot be downloaded: the server runs with -nosteam (no Steam, no anonymous steamcmd downloads). Set STEAM_USER/STEAM_PASS or enable Steam.")
+		} else {
+			fmt.Println("Workshop mods not pre-downloaded (anonymous steamcmd downloads are rejected by Steam); the running server will download them from WorkshopItems= and the container will restart once to load them")
+		}
+		return nil
+	}
+
 	args := []string{
 		"+@NoPromptForPassword", "1",
 		"+force_install_dir", cfg.ServerDir,
@@ -457,9 +472,9 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 	args = append(args, steamLoginArgs(cfg)...)
 	args = append(args, workshopBatchArgs(cfg, toDownload)...)
 
-	// Anonymous downloads are intermittently rate-limited by Steam; retry the
-	// batch once before giving up on this start. Output is captured because
-	// steamcmd exits 0 even when a workshop item fails to download.
+	// Downloads are intermittently rate-limited by Steam; retry the batch once
+	// before giving up on this start. Output is captured because steamcmd
+	// exits 0 even when a workshop item fails to download.
 	for attempt := 1; attempt <= 2; attempt++ {
 		output, err := runSteamCmdCapture(args...)
 		if err != nil {
@@ -467,7 +482,7 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 				fmt.Printf("WARNING: workshop mod download failed: %v\n", err)
 				return nil
 			}
-			fmt.Println("Workshop mod download failed (Steam intermittently rate-limits anonymous downloads), retrying in 60s...")
+			fmt.Println("Workshop mod download failed (Steam intermittently rate-limits downloads), retrying in 60s...")
 			time.Sleep(updateRetryDelay)
 			continue
 		}
@@ -485,13 +500,65 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 
 	for _, id := range toDownload {
 		if _, err := os.Stat(filepath.Join(dir, id)); err != nil {
-			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, invalid ID, or Steam-side anonymous download failure). If it is a public mod, try STEAM_USER/STEAM_PASS\n", id)
+			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, invalid ID, or Steam-side download failure). Check the ID and the account's access to the item\n", id)
 		} else {
 			fmt.Printf("Downloaded workshop mod %s\n", id)
 		}
 	}
 
 	return nil
+}
+
+// Polling knobs for WaitForModDownloads, overridable in tests.
+var (
+	modPollInterval  = 15 * time.Second
+	modNoGrowthPolls = 6 // 90s without new items = downloads finished
+	modWaitMax       = 30 * time.Minute
+)
+
+// ModCountOnDisk returns how many mod folders are currently on disk. Used to
+// detect whether new mods appeared since the entrypoint wrote the ini.
+func ModCountOnDisk(cfg *config.ServerConfig) int {
+	return len(scanModFolders(cfg))
+}
+
+// WaitForModDownloads blocks until the running PZ server has downloaded the
+// workshop items into the workshop dir (or a timeout elapses). It returns
+// true when at least one item appeared on disk, meaning the container should
+// restart once so Mods= can be populated and the mods loaded.
+func WaitForModDownloads(cfg *config.ServerConfig, ids []string) bool {
+	dir := workshopDir(cfg)
+	deadline := time.Now().Add(modWaitMax)
+
+	prev := -1
+	stable := 0
+	for {
+		count := 0
+		for _, id := range ids {
+			if _, err := os.Stat(filepath.Join(dir, id)); err == nil {
+				count++
+			}
+		}
+
+		if count >= len(ids) {
+			return count > 0
+		}
+		if count == prev {
+			stable++
+		} else {
+			stable = 0
+		}
+		// Downloads finished when the on-disk count stops growing.
+		if count > 0 && stable >= modNoGrowthPolls {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return count > 0
+		}
+
+		prev = count
+		time.Sleep(modPollInterval)
+	}
 }
 
 // workshopBatchArgs builds the workshop_download_item commands for a single
@@ -521,10 +588,11 @@ func scanModFolders(cfg *config.ServerConfig) map[string]string {
 				continue
 			}
 			itemPath := filepath.Join(workshopDir(cfg), item.Name())
-			// Standard layout: <item>/mods/<ModName>/
+			// Standard layout: <item>/mods/<ModName>/. Build 42 mods are
+			// versioned: <item>/mods/<ModName>/<build>/mod.info.
 			if sub, err := os.ReadDir(filepath.Join(itemPath, "mods")); err == nil {
 				for _, d := range sub {
-					if d.IsDir() && hasModInfo(filepath.Join(itemPath, "mods", d.Name())) {
+					if d.IsDir() && modDirHasModInfo(filepath.Join(itemPath, "mods", d.Name())) {
 						add(d.Name(), "workshop "+item.Name())
 					}
 				}
@@ -532,7 +600,7 @@ func scanModFolders(cfg *config.ServerConfig) map[string]string {
 			// Legacy layout: <item>/<ModName>/
 			if sub, err := os.ReadDir(itemPath); err == nil {
 				for _, d := range sub {
-					if d.IsDir() && d.Name() != "mods" && hasModInfo(filepath.Join(itemPath, d.Name())) {
+					if d.IsDir() && d.Name() != "mods" && modDirHasModInfo(filepath.Join(itemPath, d.Name())) {
 						add(d.Name(), "workshop "+item.Name())
 					}
 				}
@@ -556,6 +624,25 @@ func scanModFolders(cfg *config.ServerConfig) map[string]string {
 func hasModInfo(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, "mod.info"))
 	return err == nil
+}
+
+// modDirHasModInfo reports whether dir contains a mod.info directly (b41
+// layout) or in an immediate subdirectory, which is how b42 workshop mods
+// are downloaded: <ModName>/<build>/mod.info.
+func modDirHasModInfo(dir string) bool {
+	if hasModInfo(dir) {
+		return true
+	}
+	sub, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, d := range sub {
+		if d.IsDir() && hasModInfo(filepath.Join(dir, d.Name())) {
+			return true
+		}
+	}
+	return false
 }
 
 // DiscoverModNames returns the sorted names of all mods found on disk,

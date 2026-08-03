@@ -42,6 +42,10 @@ func TestDiscoverModNames(t *testing.T) {
 	writeModDir(t, filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612/mods/SecondMod"), true)
 	// Legacy layout: <item>/<ModName>/
 	writeModDir(t, filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2160432461/OldStyleMod"), true)
+	// b42 versioned layout: <item>/mods/<ModName>/<build>/mod.info
+	writeModDir(t, filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/999000111/mods/VersionedMod/42.13"), true)
+	// b41 layout inside the same mods/ dir.
+	writeModDir(t, filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/999000111/mods/PlainMod"), true)
 	// Item with no mods/ (e.g. a texture pack) - must be ignored.
 	writeModDir(t, filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/1111111111"), false)
 	// Folder without mod.info in a mods/ dir - ignored.
@@ -50,7 +54,7 @@ func TestDiscoverModNames(t *testing.T) {
 	writeModDir(t, filepath.Join(cfg.DataDir, "Workshop/ManualMod"), true)
 
 	names := DiscoverModNames(cfg)
-	want := []string{"ManualMod", "OldStyleMod", "SecondMod", "SkillRecoveryJournal"}
+	want := []string{"ManualMod", "OldStyleMod", "PlainMod", "SecondMod", "SkillRecoveryJournal", "VersionedMod"}
 	if !reflect.DeepEqual(names, want) {
 		t.Errorf("DiscoverModNames = %v, want %v", names, want)
 	}
@@ -264,6 +268,8 @@ func TestDownloadWorkshopItemsSkipsExisting(t *testing.T) {
 
 func TestDownloadWorkshopItemsForcesUpdate(t *testing.T) {
 	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
 	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
 	writeModDir(t, itemDir, false)
 	cfg.ModUpdateOnStart = true
@@ -283,6 +289,8 @@ func TestDownloadWorkshopItemsForcesUpdate(t *testing.T) {
 
 func TestDownloadWorkshopItemsRetriesOnce(t *testing.T) {
 	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
 	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
 
 	oldRun := runSteamCmdCapture
@@ -314,6 +322,8 @@ func TestDownloadWorkshopItemsRetriesOnce(t *testing.T) {
 
 func TestDownloadWorkshopItemsRetriesOnFailureLine(t *testing.T) {
 	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
 	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600/2503743612")
 
 	oldRun := runSteamCmdCapture
@@ -341,9 +351,33 @@ func TestDownloadWorkshopItemsRetriesOnFailureLine(t *testing.T) {
 	}
 }
 
-func TestDownloadWorkshopItemsGivesUpAfterRetry(t *testing.T) {
+func TestDownloadWorkshopItemsAnonymousSkipsSteamcmd(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SteamUser = ""
+	cfg.UseSteam = true
+
+	oldRun := runSteamCmdCapture
+	calls := 0
+	runSteamCmdCapture = func(args ...string) (string, error) {
+		calls++
+		return "Success", nil
+	}
+	defer func() { runSteamCmdCapture = oldRun }()
+
+	// Anonymous downloads are rejected by Steam: steamcmd must not run and the
+	// items are left to the running server to download.
+	if err := DownloadWorkshopItems(cfg, []string{"2503743612"}); err != nil {
+		t.Errorf("DownloadWorkshopItems: %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("steamcmd ran %d times, want 0 for anonymous sessions", calls)
+	}
+}
+
+func TestDownloadWorkshopItemsGivesUpAfterRetry(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
 
 	oldRun := runSteamCmdCapture
 	oldDelay := updateRetryDelay
@@ -364,6 +398,56 @@ func TestDownloadWorkshopItemsGivesUpAfterRetry(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("steamcmd batch ran %d times, want 2", calls)
+	}
+}
+
+func TestWaitForModDownloadsStable(t *testing.T) {
+	cfg := testConfig(t)
+	oldInterval := modPollInterval
+	oldStable := modNoGrowthPolls
+	oldMax := modWaitMax
+	modPollInterval = 5 * time.Millisecond
+	modNoGrowthPolls = 3
+	modWaitMax = 5 * time.Second
+	defer func() {
+		modPollInterval = oldInterval
+		modNoGrowthPolls = oldStable
+		modWaitMax = oldMax
+	}()
+
+	// Downloads appear gradually, then stop: WaitForModDownloads must return
+	// true once the count has been stable for modNoGrowthPolls polls.
+	itemDir := filepath.Join(cfg.ServerDir, "steamapps/workshop/content/108600")
+	done := make(chan struct{})
+	go func() {
+		for i, id := range []string{"1111", "2222", "3333"} {
+			os.MkdirAll(filepath.Join(itemDir, id), 0755)
+			time.Sleep(15 * time.Millisecond)
+			if i == 2 {
+				close(done)
+			}
+		}
+	}()
+	<-done
+
+	if !WaitForModDownloads(cfg, []string{"1111", "2222", "3333"}) {
+		t.Error("WaitForModDownloads should return true once downloads are stable")
+	}
+}
+
+func TestWaitForModDownloadsTimeout(t *testing.T) {
+	cfg := testConfig(t)
+	oldInterval := modPollInterval
+	oldMax := modWaitMax
+	modPollInterval = 5 * time.Millisecond
+	modWaitMax = 50 * time.Millisecond
+	defer func() {
+		modPollInterval = oldInterval
+		modWaitMax = oldMax
+	}()
+
+	if WaitForModDownloads(cfg, []string{"1111"}) {
+		t.Error("WaitForModDownloads should return false when nothing is downloaded")
 	}
 }
 

@@ -41,7 +41,7 @@ MOD_NAMES=SkillRecoveryJournal;MoreDescriptionForTraits
 ## How It Works
 
 1. `MOD_WORKSHOP_IDS` and `MOD_WORKSHOP_COLLECTION_IDS` are resolved to a list of item IDs (collections via the public Steam page, or the Steam Web API when `STEAM_API_KEY` is set)
-2. All items are downloaded in a **single steamcmd session** to `<server-files>/steamapps/workshop/content/108600/<id>/`
+2. With `STEAM_USER`/`STEAM_PASS` set, all items are downloaded in a **single steamcmd session** to `<server-files>/steamapps/workshop/content/108600/<id>/`. Without credentials, Steam rejects anonymous downloads, so the **running server downloads them itself** from `WorkshopItems=` and the container **restarts automatically once** downloads finish so the mods load
 3. Items already downloaded are skipped unless `MOD_UPDATE_ON_START=true`
 4. If `MOD_NAMES` is empty, mod folder names are auto-detected from the downloads
 5. The `.ini` is written with `Mods=` and `WorkshopItems=` and the server starts
