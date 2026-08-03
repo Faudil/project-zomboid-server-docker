@@ -17,7 +17,8 @@
 
 ### Fixed
 - SteamCMD no longer reports "Server files up to date" when the download silently failed: output is captured, `ERROR! Failed to install app`-style failures are detected, and the install is verified by checking `start-server.sh` afterwards
-- Steam now requires an account that owns Project Zomboid for app 380870 (anonymous downloads fail); `STEAM_USER`/`STEAM_PASS`/`STEAM_GUARD_CODE` are supported, and a clear message is printed when anonymous is used and the download fails
+- Steam's transient "Missing file permissions" app_update regression (steam-for-linux #10979) is now retried automatically with a backoff instead of failing the container on the first attempt; permanent failures (bad credentials) fail immediately
+- `STEAM_USER`/`STEAM_PASS`/`STEAM_GUARD_CODE` supported as the reliable workaround for the Steam-side failure and for workshop downloads when anonymous fails
 - Refuses to run when `STEAM_USER` is set without `STEAM_PASS` (steamcmd would otherwise prompt and hang forever)
 - Workshop collection resolution warning now points at `STEAM_API_KEY` when the Steam API rejects the keyless request
 - Startup now fails fast with an actionable message when the mounted volumes are not writable by UID 1000 (previously a bare `credentials.env: permission denied`); docs cover creating/chowning the host directories before first start

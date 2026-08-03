@@ -36,8 +36,10 @@ func runSteamCmd(args ...string) error {
 
 // runSteamCmdCapture runs steamcmd, streaming output to stdout while keeping
 // a copy for failure detection. steamcmd exits 0 even when app_update fails,
-// so the captured output is the only reliable signal.
-func runSteamCmdCapture(args ...string) (string, error) {
+// so the captured output is the only reliable signal. Overridable in tests.
+var runSteamCmdCapture = runSteamCmdCaptureImpl
+
+func runSteamCmdCaptureImpl(args ...string) (string, error) {
 	cmd := exec.Command(steamcmdPath, args...)
 	cmd.Dir = filepath.Dir(steamcmdPath)
 	cmd.Env = append(os.Environ(), "HOME=/home/steam")
@@ -51,9 +53,8 @@ func runSteamCmdCapture(args ...string) (string, error) {
 	return buf.String(), err
 }
 
-// steamLoginArgs builds the steamcmd login arguments. When STEAM_USER is set
-// the download runs with real credentials (Steam now requires an account that
-// owns Project Zomboid for app 380870); otherwise anonymous is used.
+// steamLoginArgs builds the steamcmd login arguments. Real credentials are
+// used when STEAM_USER is set; anonymous otherwise.
 func steamLoginArgs(cfg *config.ServerConfig) []string {
 	if cfg.SteamUser == "" {
 		return []string{"+login", "anonymous"}
@@ -67,6 +68,26 @@ func steamLoginArgs(cfg *config.ServerConfig) []string {
 
 func startScriptPath(cfg *config.ServerConfig) string {
 	return cfg.ServerDir + "/start-server.sh"
+}
+
+// Steam's "Missing file permissions" / "Missing configuration" app_update
+// failures are a known transient Valve-side issue (steam-for-linux #10979)
+// that affects all games intermittently, including with owned accounts.
+// Retry with a backoff before giving up.
+const maxUpdateAttempts = 3
+
+var updateRetryDelay = 30 * time.Second
+
+// permanentFailure reports whether a steamcmd failure line describes a
+// problem retrying cannot fix (e.g. bad credentials).
+func permanentFailure(msg string) bool {
+	lower := strings.ToLower(msg)
+	for _, marker := range []string{"invalid password", "password incorrect", "steam guard", "two-factor", "account does not"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func InstallOrUpdate(cfg *config.ServerConfig) error {
@@ -85,8 +106,29 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 		updateCmd = fmt.Sprintf("app_update %s -beta %s validate", cfg.SteamAppID, cfg.ServerBranch)
 	}
 
+	for attempt := 1; attempt <= maxUpdateAttempts; attempt++ {
+		if attempt > 1 {
+			fmt.Printf("Steam download failed, retrying (attempt %d/%d)...\n", attempt, maxUpdateAttempts)
+			time.Sleep(updateRetryDelay)
+		}
+
+		err := runInstallAttempt(cfg, updateCmd)
+		if err == nil {
+			return nil
+		}
+		fmt.Printf("Steam download attempt %d/%d failed: %v\n", attempt, maxUpdateAttempts, err)
+
+		// Don't burn the remaining attempts on a problem retrying cannot fix.
+		if permanentFailure(err.Error()) {
+			return err
+		}
+	}
+
+	return fmt.Errorf("steamcmd could not download app %s after %d attempts. This is a known transient Steam-side failure (steam-for-linux #10979) - restart the container to retry (docker compose up -d). Setting STEAM_USER/STEAM_PASS (an account that owns Project Zomboid) often resolves it", cfg.SteamAppID, maxUpdateAttempts)
+}
+
+func runInstallAttempt(cfg *config.ServerConfig, updateCmd string) error {
 	args := []string{
-		"+@ShutdownOnFailedCommand", "1",
 		"+force_install_dir", cfg.ServerDir,
 	}
 	args = append(args, steamLoginArgs(cfg)...)
@@ -98,11 +140,11 @@ func InstallOrUpdate(cfg *config.ServerConfig) error {
 	}
 
 	if msg := steamFailure(output); msg != "" {
-		return fmt.Errorf("steamcmd could not download app %s: %s. Steam now requires an account that owns Project Zomboid - set STEAM_USER and STEAM_PASS in .env", cfg.SteamAppID, msg)
+		return fmt.Errorf("%s", msg)
 	}
 
 	if _, err := os.Stat(startScriptPath(cfg)); err != nil {
-		return fmt.Errorf("server files were not installed (start-server.sh missing). Set STEAM_USER and STEAM_PASS in .env to download with a Steam account that owns Project Zomboid")
+		return fmt.Errorf("server files were not installed (start-server.sh missing)")
 	}
 
 	return nil
@@ -275,7 +317,7 @@ func DownloadWorkshopItems(cfg *config.ServerConfig, ids []string) error {
 
 	for _, id := range toDownload {
 		if _, err := os.Stat(filepath.Join(dir, id)); err != nil {
-			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, or invalid ID)\n", id)
+			fmt.Printf("WARNING: workshop item %s did not download (private, region-locked, or invalid ID). If it is a public mod, anonymous workshop downloads may be failing - try STEAM_USER/STEAM_PASS\n", id)
 		} else {
 			fmt.Printf("Downloaded workshop mod %s\n", id)
 		}

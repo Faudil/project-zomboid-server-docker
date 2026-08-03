@@ -39,12 +39,20 @@ The JVM heap size is controlled by `MAX_RAM`. Default is 4096m (4GB). The actual
 If the container exits with:
 
 ```text
-ERROR installing/updating server: steamcmd could not download app 380870: ...
+ERROR installing/updating server: steamcmd could not download app 380870 ...
 ```
 
-or the older `start-server.sh not found` error, it means the SteamCMD download
-failed. Since 2025 Steam requires an account that **owns Project Zomboid** to
-download the dedicated server files; anonymous downloads no longer work.
+Steam is intermittently failing anonymous `app_update` downloads with a
+cryptic error (`Missing file permissions` / `Missing configuration`). This is
+a known transient Valve-side regression
+([steam-for-linux #10979](https://github.com/ValveSoftware/steam-for-linux/issues/10979))
+that also affects owned accounts. The entrypoint retries automatically on
+every start.
+
+If it keeps failing:
+
+1. Restart a few times: `docker compose up -d` (the failure is often transient)
+2. Set Steam credentials as the reliable workaround:
 
 ```env
 STEAM_USER=your_steam_account
@@ -58,8 +66,7 @@ email on the first login:
 STEAM_GUARD_CODE=ABC12
 ```
 
-Then restart: `docker compose up -d`. The login is remembered afterwards, so
-`STEAM_GUARD_CODE` is only needed once per server-files volume.
+The login is remembered afterwards, so `STEAM_GUARD_CODE` is only needed once.
 
 ## Workshop mods not downloading
 
@@ -69,6 +76,9 @@ Then restart: `docker compose up -d`. The login is remembered afterwards, so
    docker compose exec zomboid ping google.com
    ```
 3. Set `UPDATE_ON_START=true` (default)
+4. If the log says `workshop item <id> did not download` for a public mod,
+   anonymous workshop downloads may be failing (Steam-side). Set
+   `STEAM_USER`/`STEAM_PASS` in `.env` and restart
 
 ## Permission errors
 

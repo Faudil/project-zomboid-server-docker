@@ -96,11 +96,16 @@ mods dropped into `<DATA_DIR>/Workshop/`.
 | `STEAM_PASS` | string | (empty) | Steam account password |
 | `STEAM_GUARD_CODE` | string | (empty) | One-time Steam Guard code from your email (first login only) |
 
-**Important:** Steam now requires an account that **owns Project Zomboid** to
-download the dedicated server files (app 380870). Anonymous downloads fail
-with `Failed to install app '380870'`. Set `STEAM_USER` and `STEAM_PASS` in
-`.env`. If your account uses Steam Guard, put the code from your email into
-`STEAM_GUARD_CODE` on the first login; steamcmd remembers the login afterwards.
+**Note:** Steam occasionally fails anonymous `app_update` downloads with a
+cryptic `Failed to install app '380870' (Missing file permissions)` error.
+This is a known, transient Valve-side regression
+([steam-for-linux #10979](https://github.com/ValveSoftware/steam-for-linux/issues/10979))
+that also affects owned accounts. The entrypoint retries automatically; if it
+persists, set `STEAM_USER` and `STEAM_PASS` (an account that owns Project
+Zomboid), which is the reliable workaround. That account is also needed to
+download workshop mods when anonymous downloads fail. If your account uses
+Steam Guard, put the code from your email into `STEAM_GUARD_CODE` on the
+first login; steamcmd remembers the login afterwards.
 
 ## Backups
 

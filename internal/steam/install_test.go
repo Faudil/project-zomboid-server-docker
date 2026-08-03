@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/faudil/project-zomboid-server-docker/internal/config"
 )
@@ -268,5 +269,84 @@ func TestInstallOrUpdateSkipsWhenPresent(t *testing.T) {
 	}
 	if err := InstallOrUpdate(cfg); err != nil {
 		t.Errorf("InstallOrUpdate should skip when files exist and UPDATE_ON_START=false, got %v", err)
+	}
+}
+
+func TestInstallOrUpdateRetriesTransientFailure(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = ""
+
+	oldRun := runSteamCmdCapture
+	oldDelay := updateRetryDelay
+	runSteamCmdCapture = func(args ...string) (string, error) {
+		// Transient Valve-side regression, then success.
+		if _, err := os.Stat(startScriptPath(cfg)); err != nil {
+			if err := os.WriteFile(startScriptPath(cfg), []byte("#!/bin/bash\n"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			return "ERROR! Failed to install app '380870' (Missing file permissions)", nil
+		}
+		return "Success! App '380870' fully installed", nil
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmdCapture = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	if err := InstallOrUpdate(cfg); err != nil {
+		t.Errorf("InstallOrUpdate should succeed after transient failure, got %v", err)
+	}
+}
+
+func TestInstallOrUpdateExhaustsRetries(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = ""
+
+	oldRun := runSteamCmdCapture
+	oldDelay := updateRetryDelay
+	calls := 0
+	runSteamCmdCapture = func(args ...string) (string, error) {
+		calls++
+		return "ERROR! Failed to install app '380870' (Missing file permissions)", nil
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmdCapture = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	err := InstallOrUpdate(cfg)
+	if err == nil {
+		t.Fatal("InstallOrUpdate should fail after exhausting retries")
+	}
+	if calls != maxUpdateAttempts {
+		t.Errorf("steamcmd ran %d times, want %d", calls, maxUpdateAttempts)
+	}
+}
+
+func TestInstallOrUpdatePermanentFailureNoRetry(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SteamUser = "myuser"
+	cfg.SteamPass = "mypass"
+
+	oldRun := runSteamCmdCapture
+	oldDelay := updateRetryDelay
+	calls := 0
+	runSteamCmdCapture = func(args ...string) (string, error) {
+		calls++
+		return "ERROR! Failed to login: Invalid Password", nil
+	}
+	updateRetryDelay = time.Millisecond
+	defer func() {
+		runSteamCmdCapture = oldRun
+		updateRetryDelay = oldDelay
+	}()
+
+	if err := InstallOrUpdate(cfg); err == nil {
+		t.Fatal("InstallOrUpdate should fail on bad credentials")
+	}
+	if calls != 1 {
+		t.Errorf("steamcmd ran %d times, want 1 (no retry on permanent failure)", calls)
 	}
 }

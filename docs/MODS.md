@@ -108,8 +108,10 @@ steamcmd re-downloads each item (unchanged items resolve quickly).
 
 ### Download fails
 
-- `WARNING: workshop item <id> did not download` means the item is private,
-  region-locked, or the ID is wrong -- steamcmd downloads anonymously
+- `WARNING: workshop item <id> did not download` — if the item is public,
+  anonymous workshop downloads may be failing (a known Steam-side issue).
+  Set `STEAM_USER`/`STEAM_PASS` in `.env` (account owning Project Zomboid)
+  and restart
 - Check internet connectivity and Steam rate limits (retry after a while)
 - Ensure `UPDATE_ON_START=true` (default) so the base game files are present
 
