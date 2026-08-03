@@ -27,6 +27,6 @@ jobs:
             exit 1
           fi
 
-      - uses: hadolint/hadolint-action@v3
+      - uses: hadolint/hadolint-action@v3.4.0
         with:
           dockerfile: Dockerfile
