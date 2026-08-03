@@ -8,6 +8,24 @@
 
 ## 2. Download the Repository
 
+### Option A: One-liner (recommended for a single server)
+
+No download needed, just run:
+
+```bash
+docker run -d \
+  --name pz-server \
+  -p 16261:16261/udp -p 16262:16262/udp -p 27015:27015 \
+  -e ADMIN_PASSWORD=your-secure-admin-password \
+  -e RCON_PASSWORD=your-secure-rcon-password \
+  -v pz-data:/home/steam/Zomboid \
+  faudil/project-zomboid-server:latest
+```
+
+Set `ADMIN_PASSWORD` and `RCON_PASSWORD` to secure values before running. First launch downloads the server files via SteamCMD (~5-10 minutes depending on internet speed). Skip to [Monitor](#6-monitor).
+
+### Option B: Docker Compose (recommended for configuration)
+
 ```bash
 git clone https://github.com/faudil/project-zomboid-server-docker.git
 cd project-zomboid-server-docker

@@ -21,9 +21,24 @@ A Docker container for the Project Zomboid dedicated server. Built from the grou
 
 ## Quick Start
 
+One-liner (Docker Hub image):
+
+```bash
+docker run -d \
+  --name pz-server \
+  -p 16261:16261/udp -p 16262:16262/udp -p 27015:27015 \
+  -e ADMIN_PASSWORD=your-admin-password \
+  -e RCON_PASSWORD=your-rcon-password \
+  -v pz-data:/home/steam/Zomboid \
+  faudil/project-zomboid-server:latest
+```
+
+Or with Docker Compose:
+
 ```bash
 cp .env.example .env
-# Edit .env and set ADMIN_PASSWORD and RCON_PASSWORD
+# Edit .env — ADMIN_PASSWORD and RCON_PASSWORD are optional:
+# if left empty they are auto-generated and stored in ./data/credentials.env
 
 mkdir -p data server-files backups
 
@@ -89,11 +104,13 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference. The most i
 |----------|---------|-------------|
 | `SERVER_NAME` | `servertest` | Server/map name |
 | `PUBLIC_NAME` | `My PZ Server` | Public display name |
-| `ADMIN_PASSWORD` | auto-generated | Admin account password |
-| `RCON_PASSWORD` | auto-generated | RCON password |
+| `ADMIN_PASSWORD` | auto-generated | Admin account password (stored in `data/credentials.env` when unset) |
+| `RCON_PASSWORD` | auto-generated | RCON password (stored in `data/credentials.env` when unset) |
 | `MAX_PLAYERS` | `16` | Player slots |
 | `MAX_RAM` | `4096m` | JVM max heap |
 | `MOD_WORKSHOP_IDS` | (empty) | Workshop mod IDs (semicolon-separated) |
+| `MOD_WORKSHOP_COLLECTION_IDS` | (empty) | Steam collection IDs; items resolved automatically |
+| `MOD_NAMES` | auto-detected | Mod folder names (empty = derived from downloads) |
 | `UPDATE_ON_START` | `true` | Auto-update server files |
 | `SERVER_BRANCH` | (empty) | Beta branch (`unstable`, `legacy41`) |
 | `BACKUP_ENABLED` | `false` | Enable auto-backups |
