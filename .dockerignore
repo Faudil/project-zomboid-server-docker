@@ -1,0 +1,8 @@
+*.tar.gz
+*.zip
+data/
+server-files/
+backups/
+.env
+/debug
+/output

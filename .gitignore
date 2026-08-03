@@ -1,0 +1,9 @@
+/entrypoint
+/data
+/server-files
+/backups
+.env
+*.tar.gz
+*.zip
+/debug
+/output
