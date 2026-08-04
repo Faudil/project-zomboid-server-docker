@@ -89,3 +89,122 @@ func TestWriteSandboxVarsLegacyOverrideAliased(t *testing.T) {
 		t.Errorf("legacy FoodLoot key written verbatim:\n%s", content)
 	}
 }
+
+func writeSandboxForMode(t *testing.T, mode string) string {
+	t.Helper()
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.ServerName = "testworld"
+	cfg.SandboxMode = mode
+	if err := cfg.WriteSandboxVars(); err != nil {
+		t.Fatalf("WriteSandboxVars(%s): %v", mode, err)
+	}
+	data, _ := os.ReadFile(cfg.SandboxVarsPath())
+	return string(data)
+}
+
+func TestWriteSandboxVarsModes(t *testing.T) {
+	apoc := writeSandboxForMode(t, "apocalypse")
+	perf := writeSandboxForMode(t, "performance")
+	maxMode := writeSandboxForMode(t, "max")
+
+	cleanupKeys := map[string]string{
+		"HoursForCorpseRemoval":    "48",
+		"BloodSplatLifespanDays":   "7",
+		"DaysForRottenFoodRemoval": "14",
+		"MaximumRatIndex":          "0",
+		"HoursForWorldItemRemoval": "12",
+	}
+	for k, v := range cleanupKeys {
+		want := k + " = " + v
+		if !strings.Contains(perf, want) || !strings.Contains(maxMode, want) {
+			t.Errorf("performance/max mode missing %q:\nperf:\n%s\nmax:\n%s", want, perf, maxMode)
+		}
+		if strings.Contains(apoc, k+" = "+v) {
+			t.Errorf("apocalypse mode must keep b42 defaults, found %s:\n%s", want, apoc)
+		}
+	}
+
+	for _, want := range []string{"PopulationMultiplier = 0.35", "PopulationStartMultiplier = 0.5", "PopulationPeakMultiplier = 1.0", "RedistributeHours = 24.0", "FollowSoundDistance = 50", "RallyGroupSize = 10", "RallyGroupSizeVariance = 25"} {
+		if !strings.Contains(maxMode, want) {
+			t.Errorf("max mode missing %q:\n%s", want, maxMode)
+		}
+	}
+	for _, want := range []string{"PopulationMultiplier = 0.65", "RallyGroupSize = 20"} {
+		if !strings.Contains(perf, want) {
+			t.Errorf("performance mode must keep Apocalypse population, missing %q:\n%s", want, perf)
+		}
+	}
+	if strings.Contains(apoc, "PopulationMultiplier = 0.35") {
+		t.Errorf("apocalypse mode must keep Apocalypse population:\n%s", apoc)
+	}
+}
+
+func TestSandboxModeEnvOverrideWins(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.ServerName = "testworld"
+	cfg.SandboxMode = "performance"
+	cfg.SandboxVars = map[string]string{"HoursForCorpseRemoval": "999"}
+
+	if err := cfg.WriteSandboxVars(); err != nil {
+		t.Fatalf("WriteSandboxVars: %v", err)
+	}
+	data, _ := os.ReadFile(cfg.SandboxVarsPath())
+	if !strings.Contains(string(data), "HoursForCorpseRemoval = 999") {
+		t.Errorf("SANDBOX_* override must win over SANDBOX_MODE:\n%s", data)
+	}
+}
+
+func TestWriteSandboxVarsNestedOverride(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.ServerName = "testworld"
+	cfg.SandboxVars = map[string]string{
+		"ZombieConfig.PopulationMultiplier": "0.2",
+		"ZombieConfig.RallyGroupSize":       "5",
+		"ZombieLore.Speed":                  "1",
+	}
+
+	if err := cfg.WriteSandboxVars(); err != nil {
+		t.Fatalf("WriteSandboxVars: %v", err)
+	}
+	data, _ := os.ReadFile(cfg.SandboxVarsPath())
+	content := string(data)
+
+	for _, want := range []string{"PopulationMultiplier = 0.2", "RallyGroupSize = 5", "Speed = 1"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("nested override missing %q:\n%s", want, content)
+		}
+	}
+	// Nested keys must not leak to the top level of SandboxVars.
+	for _, leak := range []string{"\n    PopulationMultiplier", "\n    Speed ="} {
+		if strings.Contains(content, leak) {
+			t.Errorf("nested key leaked to top level (%q):\n%s", leak, content)
+		}
+	}
+	// Unknown nested tables are ignored (with a warning), not written.
+	if strings.Contains(content, "Bogus") {
+		t.Errorf("unknown nested table written:\n%s", content)
+	}
+}
+
+func TestWriteSandboxVarsNestedOverrideWinsOverMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.ServerName = "testworld"
+	cfg.SandboxMode = "max"
+	cfg.SandboxVars = map[string]string{"ZombieConfig.PopulationMultiplier": "0.5"}
+
+	if err := cfg.WriteSandboxVars(); err != nil {
+		t.Fatalf("WriteSandboxVars: %v", err)
+	}
+	data, _ := os.ReadFile(cfg.SandboxVarsPath())
+	content := string(data)
+	if !strings.Contains(content, "PopulationMultiplier = 0.5") {
+		t.Errorf("nested SANDBOX_ZombieConfig.* must win over SANDBOX_MODE=max:\n%s", content)
+	}
+	if strings.Contains(content, "PopulationMultiplier = 0.35") {
+		t.Errorf("max mode value leaked despite nested override:\n%s", content)
+	}
+}

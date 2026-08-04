@@ -241,6 +241,9 @@ func (c *ServerConfig) Validate() []string {
 	if c.MaxRam == "" || c.MinRam == "" {
 		errors = append(errors, "MAX_RAM and MIN_RAM must not be empty")
 	}
+	if !sandboxModes[c.SandboxMode] {
+		errors = append(errors, fmt.Sprintf("SANDBOX_MODE must be one of apocalypse, performance, max (got %q)", c.SandboxMode))
+	}
 
 	return errors
 }

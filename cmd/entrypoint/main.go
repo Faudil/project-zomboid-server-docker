@@ -109,6 +109,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The launcher passes vmArgs from ProjectZomboid64.json on the java
+	// command line, which overrides _JAVA_OPTIONS. Patch it so MAX_RAM,
+	// MIN_RAM, GC_CONFIG and JVM_EXTRA_ARGS actually take effect.
+	if err := cfg.PatchLauncherJson(); err != nil {
+		fmt.Printf("WARNING: could not patch ProjectZomboid64.json: %v\n", err)
+	} else {
+		fmt.Printf("JVM settings patched into ProjectZomboid64.json (heap %s, GC %s)\n", cfg.MaxRam, cfg.GCConfig)
+	}
+
 	discord := webhook.NewDiscord(cfg)
 	discord.NotifyStart()
 

@@ -4,8 +4,12 @@
 
 ### Fixed
 - Default sandbox values were Build 41 era: b42 renumbered several option scales (e.g. `Zombies = 1` became "Insane", `DayLength = 1` became 15 minutes) and loot options became direct multipliers, so servers created without `SANDBOX_*` overrides got extreme settings. Defaults now mirror the b42 "Apocalypse" preset (`server-files/media/lua/shared/Sandbox/Apocalypse.lua`)
+- `MAX_RAM`/`MIN_RAM`/`GC_CONFIG`/`JVM_EXTRA_ARGS` were silently ignored: the game's `ProjectZomboid64.json` passes vmArgs on the java command line, overriding `_JAVA_OPTIONS`. The entrypoint now patches the json on every start so the env vars take effect (idempotent, preserves all other vmArgs)
 
 ### Added
+- `SANDBOX_MODE` presets for performance: `apocalypse` (default), `performance` (world-cleanup: corpses 48h, blood 7d, rotten food 14d, rats off), `max` (adds reduced zombie population/rally groups for the best TPS)
+- Nested sandbox overrides via dot notation: `SANDBOX_ZombieConfig.PopulationMultiplier=0.5` and `SANDBOX_ZombieLore.Speed=4` write into the nested b42 tables (env overrides still win over `SANDBOX_MODE`)
+- `docs/PERFORMANCE.md` with JVM, sandbox, compose (cpuset/mem_limit/ulimits), storage and kernel tuning guidance
 - Initial release
 - Go-based entrypoint with config generation (ini + lua)
 - SteamCMD integration for server install/update

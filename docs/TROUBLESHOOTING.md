@@ -32,7 +32,13 @@ docker compose logs zomboid
 
 ## Server eats all my RAM
 
-The JVM heap size is controlled by `MAX_RAM`. Default is 4096m (4GB). The actual process may use more due to JVM overhead (~20-30% more than `-Xmx`). Reduce `MAX_RAM` or increase host memory.
+The JVM heap size is controlled by `MAX_RAM` (default 4096m / 4GB), applied by
+patching the game's `ProjectZomboid64.json` on every start. The actual process
+uses ~20-30% more than `-Xmx` due to JVM overhead (metaspace, JIT, ZGC
+buffers), so a 4GB heap shows up as roughly 5-5.5GB RSS. Reduce `MAX_RAM`
+(and `MIN_RAM`), or increase host memory. If you see a heap larger than
+`MAX_RAM` in `docker stats`, your container was started before the json
+patching existed — restart it. See [PERFORMANCE.md](PERFORMANCE.md) for sizing.
 
 ## Server files not downloading (start-server.sh missing)
 

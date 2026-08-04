@@ -46,13 +46,15 @@ they are intentionally not printed to the container logs.
 
 ## JVM & Memory
 
-Applied to the server JVM via `_JAVA_OPTIONS` (the PZ start script exposes no
-knobs for these):
+Applied to the server JVM by patching the game's `ProjectZomboid64.json` on
+every start (the launcher passes those vmArgs on the java command line, which
+would otherwise override `_JAVA_OPTIONS`). See
+[PERFORMANCE.md](PERFORMANCE.md) for sizing guidance.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `MAX_RAM` | string | `4096m` | Maximum heap size (`-Xmx`) |
-| `MIN_RAM` | string | `4096m` | Initial heap size (`-Xms`) |
+| `MIN_RAM` | string | `4096m` | Initial heap size (`-Xms`); keep equal to `MAX_RAM` |
 | `GC_CONFIG` | string | `ZGC` | Garbage collector (`ZGC`, `G1`, `Serial`) |
 | `JVM_EXTRA_ARGS` | string | (empty) | Additional JVM arguments |
 
@@ -70,7 +72,42 @@ SANDBOX_WaterShutModifier=20
 
 Every `SANDBOX_*` variable becomes a key in `SandboxVars.lua` with the same
 value. Unset keys fall back to the built-in defaults. See the
-[PZ wiki](https://pzwiki.net/wiki/Sandbox_Options) for valid key names.
+[PZ wiki](https://pzwiki.net/wiki/Server_settings) for valid key names.
+
+Nested tables use dot notation — `ZombieConfig` (advanced zombie options) and
+`ZombieLore` (zombie behavior):
+
+```env
+SANDBOX_ZombieConfig.PopulationMultiplier=0.5
+SANDBOX_ZombieConfig.RallyGroupSize=10
+SANDBOX_ZombieLore.Speed=4
+```
+
+becomes:
+
+```lua
+ZombieConfig = {
+    PopulationMultiplier = 0.5,
+    RallyGroupSize = 10,
+    ...
+},
+ZombieLore = {
+    Speed = 4,
+    ...
+}
+```
+
+`SANDBOX_*` overrides (flat and nested) always win over `SANDBOX_MODE`.
+
+`SANDBOX_MODE` applies a preset over the built-in b42 Apocalypse defaults:
+
+| Value | Description |
+|-------|-------------|
+| `apocalypse` (default) | Vanilla b42 Apocalypse values |
+| `performance` | World-cleanup tuning: corpses 48 h (default 9 days), blood 7 d (default never), rotten food 14 d (default never), rats off, ground items 12 h. Near-zero gameplay impact |
+| `max` | `performance` plus reduced zombie population and rally groups for the best TPS on long-running worlds (easier difficulty) |
+
+`SANDBOX_*` variables always override `SANDBOX_MODE`.
 
 ## Mods
 

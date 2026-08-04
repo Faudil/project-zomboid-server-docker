@@ -77,6 +77,7 @@ docker compose logs -f
 |----------|-------------|
 | [QUICKSTART.md](docs/QUICKSTART.md) | Step-by-step setup from zero |
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Complete environment variable reference |
+| [PERFORMANCE.md](docs/PERFORMANCE.md) | Tuning for maximum server performance |
 | [MODS.md](docs/MODS.md) | Workshop mod installation guide |
 | [BACKUP.md](docs/BACKUP.md) | Backup, restore, and rotation |
 | [MULTI_INSTANCE.md](docs/MULTI_INSTANCE.md) | Running multiple servers |

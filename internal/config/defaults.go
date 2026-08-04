@@ -50,6 +50,7 @@ type ServerConfig struct {
 	TZ                    string
 	ServerDir             string
 	DataDir               string
+	SandboxMode           string
 
 	SandboxVars map[string]string
 }
@@ -99,6 +100,7 @@ func DefaultConfig() *ServerConfig {
 		TZ:                    envStr("TZ", "UTC"),
 		ServerDir:             envStr("SERVER_DIR", "/home/steam/pzserver"),
 		DataDir:               envStr("DATA_DIR", "/home/steam/Zomboid"),
+		SandboxMode:           envStr("SANDBOX_MODE", "apocalypse"),
 		SandboxVars:           map[string]string{},
 	}
 
