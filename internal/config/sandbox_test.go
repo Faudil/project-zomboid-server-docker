@@ -64,7 +64,7 @@ func TestWriteSandboxVarsContent(t *testing.T) {
 			t.Errorf("legacy b41 key %q present in b42 sandbox output:\n%s", legacy, content)
 		}
 	}
-	for _, want := range []string{"FoodLootNew = 2", "WeaponLootNew = 2", "OtherLootNew = 2", "SurvivorHouseChance = 3", "TimeSinceApo = 1", "NightDarkness = 3", "StartYear = 1", "WaterShut = 2", "ElecShut = 2"} {
+	for _, want := range []string{"FoodLootNew = 0.8", "WeaponLootNew = 0.6", "OtherLootNew = 0.8", "SurvivorHouseChance = 3", "TimeSinceApo = 1", "NightDarkness = 3", "StartYear = 1", "WaterShut = 2", "ElecShut = 2", "DayLength = 4", "Alarm = 4", "LockedHouses = 6", "GeneratorSpawning = 4", "AnnotatedMapChance = 4", "SleepingEvent = 1", "ErosionSpeed = 4", "CompostTime = 2"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("missing %q in sandbox output:\n%s", want, content)
 		}

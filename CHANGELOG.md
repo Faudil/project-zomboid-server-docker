@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Default sandbox values were Build 41 era: b42 renumbered several option scales (e.g. `Zombies = 1` became "Insane", `DayLength = 1` became 15 minutes) and loot options became direct multipliers, so servers created without `SANDBOX_*` overrides got extreme settings. Defaults now mirror the b42 "Apocalypse" preset (`server-files/media/lua/shared/Sandbox/Apocalypse.lua`)
+
 ### Added
 - Initial release
 - Go-based entrypoint with config generation (ini + lua)
