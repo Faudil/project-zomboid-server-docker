@@ -9,6 +9,8 @@
 ### Added
 - `SANDBOX_MODE` presets for performance: `apocalypse` (default), `performance` (world-cleanup: corpses 48h, blood 7d, rotten food 14d, rats off), `max` (adds reduced zombie population/rally groups for the best TPS)
 - Nested sandbox overrides via dot notation: `SANDBOX_ZombieConfig.PopulationMultiplier=0.5` and `SANDBOX_ZombieLore.Speed=4` write into the nested b42 tables (env overrides still win over `SANDBOX_MODE`)
+- Docker log rotation (`max-size: 10m`, `max-file: 3`) in both compose examples; `-trimpath` build flag for a smaller, reproducible entrypoint binary
+- PERFORMANCE.md: host kernel hints (THP=madvise, CPU governor, swappiness, UDP buffers, max_map_count, noatime) and host-networking option
 - `docs/PERFORMANCE.md` with JVM, sandbox, compose (cpuset/mem_limit/ulimits), storage and kernel tuning guidance
 - Initial release
 - Go-based entrypoint with config generation (ini + lua)

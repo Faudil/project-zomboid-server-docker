@@ -15,6 +15,8 @@ This guide covers the levers exposed by this image, from the highest-impact
 | CPU pinning | compose `cpuset` to physical cores | Medium on shared hosts |
 | Container memory | compose `mem_limit` | Medium (avoids OOM-killer) |
 | Storage | `data/` on SSD/NVMe, not NFS | Medium (saves/loads) |
+| Log rotation | compose `logging:` block (shipped) | Medium (prevents disk exhaustion) |
+| Host networking | `network_mode: host` (advanced) | Low-Medium (skips NAT) |
 | Restart speed | `UPDATE_ON_START=false` on prod | Startup only |
 
 ## 1. JVM settings
@@ -107,17 +109,72 @@ Notes:
 
 ## 4. Host kernel hints
 
+All of these are host-level, no game parameter changes:
+
 ```sh
-# Reduce swap pressure; the game is latency-sensitive
-sudo sysctl vm.swappiness=10
+# Reduce swap pressure; the game is latency-sensitive (swap-in = stutters)
+sudo sysctl vm.swappiness=1
+
+# Transparent huge pages break ZGC's low-pause guarantees (latency spikes).
+# "madvise" lets the JVM opt in explicitly, which is what it wants.
+echo madvise | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+
+# Keep the CPU at full frequency instead of power-saving scaling lag
+sudo cpupower frequency-set -g performance   # or set the scaling_governor manually
+
+# ZGC creates many virtual memory mappings on large (>8G) heaps; the default
+# max_map_count (65530) can be too low and cause "mmap failed" at startup
+sudo sysctl vm.max_map_count=262144
+
+# UDP receive/send buffers: helps when 16+ players are connected and avoids
+# dropped packets under load
+sudo sysctl net.core.rmem_max=26214400
+sudo sysctl net.core.wmem_max=26214400
+
+# Mount the data volume without atime updates: the game reads save chunks
+# constantly, and atime writes on every read are pure overhead
+# (add "noatime" to the fstab entry or mount options)
 ```
 
 Optional, for very large worlds:
 `vm.overcommit_memory=1` may prevent the JVM from failing to reserve its
 heap, but most hosts do not need it.
 
-## 5. Backups and autosave
+## 5. Container log rotation
 
+The server prints chat, LuaNet messages and mod downloads to stdout, and
+Docker stores those in `json-file` logs that grow without bound by default —
+on long-running servers they can fill the host disk. Both compose examples
+ship with rotation:
+
+```yaml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+```
+
+If you run the container via `docker run` (no compose file), add
+`--log-opt max-size=10m --log-opt max-file=3`.
+
+## 6. Host networking (advanced)
+
+The default bridge networking NATs UDP game traffic in the kernel. For the
+lowest possible latency on a dedicated host you can bypass the bridge
+entirely — the server binds all interfaces, so no port mapping is needed:
+
+```yaml
+services:
+  zomboid:
+    network_mode: host
+```
+
+Tradeoffs: the container sees the host's network stack (no per-container
+port isolation, no network namespace separation) — only use it on a host
+that runs nothing else untrusted.
+
+## 7. Backups and autosave
 - Autosave every `AUTOSAVE_INTERVAL=15` minutes is a good balance. Lower
   values add write I/O during play.
 - Backups (`BACKUP_ENABLED=true`) tar the whole save on the same disk —
@@ -125,7 +182,7 @@ heap, but most hosts do not need it.
   `BACKUP_INTERVAL` (default 360 min) or keep backups disabled and rely on
   autosave + nightly host snapshots.
 
-## 6. Restarts
+## 8. Restarts
 
 - `UPDATE_ON_START=false` skips the DepotDownloader check and makes restarts
   several minutes faster in production. Run with `true` (default) when you
@@ -133,7 +190,7 @@ heap, but most hosts do not need it.
 - The container healthcheck starts `start-period=600s` to cover the first-run
   download; later restarts become healthy in ~1-2 minutes.
 
-## 7. Monitoring
+## 9. Monitoring
 
 - `docker stats` for container CPU/memory; watch that the RSS stays below
   `mem_limit` over a few days (ZGC grows slowly).
