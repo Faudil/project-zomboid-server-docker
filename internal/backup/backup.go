@@ -133,7 +133,7 @@ func (m *Manager) rotate() {
 	}
 }
 
-func (m *Manager) Scheduler(srv *server.Manager) {
+func (m *Manager) Scheduler() {
 	if !m.cfg.BackupEnabled {
 		return
 	}
@@ -144,7 +144,7 @@ func (m *Manager) Scheduler(srv *server.Manager) {
 
 		for range ticker.C {
 			fmt.Println("Starting scheduled backup...")
-			m.saveWorld(srv)
+			m.saveWorld()
 			m.Run()
 			fmt.Println("Scheduled backup complete")
 		}
@@ -153,7 +153,7 @@ func (m *Manager) Scheduler(srv *server.Manager) {
 
 // saveWorld requests the server to flush its state to disk via RCON so the
 // backup captures a consistent snapshot.
-func (m *Manager) saveWorld(srv *server.Manager) {
+func (m *Manager) saveWorld() {
 	client := server.NewRCONClient(m.cfg)
 	if err := client.Connect(); err != nil {
 		fmt.Printf("RCON connection failed before backup: %v\n", err)

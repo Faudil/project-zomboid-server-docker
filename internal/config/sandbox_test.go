@@ -208,3 +208,62 @@ func TestWriteSandboxVarsNestedOverrideWinsOverMode(t *testing.T) {
 		t.Errorf("max mode value leaked despite nested override:\n%s", content)
 	}
 }
+
+func TestLuaValue(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"0.65", "0.65"},
+		{"-1", "-1"},
+		{"14", "14"},
+		{"2.0", "2.0"},
+		{"true", "true"},
+		{"false", "false"},
+		{`"Base.Hat, Base.Glasses"`, `"Base.Hat, Base.Glasses"`},
+		{"Base.Hat", `"Base.Hat"`},
+		{`a"b`, `"a\"b"`},
+		{`a\b`, `"a\\b"`},
+	}
+	for _, tt := range tests {
+		if got := luaValue(tt.in); got != tt.want {
+			t.Errorf("luaValue(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestValidLuaValueRejectsControlChars(t *testing.T) {
+	for _, v := range []string{"1)\nos.execute(\"rm -rf /\")", "a\x01b", "x\x7f"} {
+		if validLuaValue(v) {
+			t.Errorf("validLuaValue(%q) = true, want false", v)
+		}
+	}
+}
+
+func TestWriteSandboxVarsInjectionAttemptIgnored(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DataDir = t.TempDir()
+	cfg.ServerName = "testworld"
+	cfg.SandboxVars = map[string]string{
+		"Zombies":                   "4",
+		"Bad Key!":                  "1",
+		"LootItemRemovalList":       "Base.Hat",
+		"ZombieConfig.OwnerAttacks": "0\nend)",
+	}
+
+	if err := cfg.WriteSandboxVars(); err != nil {
+		t.Fatalf("WriteSandboxVars: %v", err)
+	}
+	data, _ := os.ReadFile(cfg.SandboxVarsPath())
+	content := string(data)
+
+	if strings.Contains(content, "Bad Key!") {
+		t.Errorf("invalid key written:\n%s", content)
+	}
+	if strings.Contains(content, "end)") || strings.Contains(content, "os.execute") {
+		t.Errorf("injection value leaked into lua:\n%s", content)
+	}
+	if !strings.Contains(content, `LootItemRemovalList = "Base.Hat"`) {
+		t.Errorf("string value not quoted:\n%s", content)
+	}
+	if strings.Contains(content, "ZombieConfig") && strings.Contains(content, "OwnerAttacks") {
+		t.Errorf("nested injection leaked:\n%s", content)
+	}
+}

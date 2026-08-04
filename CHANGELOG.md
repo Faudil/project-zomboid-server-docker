@@ -2,16 +2,37 @@
 
 ## [Unreleased]
 
-### Fixed
-- Default sandbox values were Build 41 era: b42 renumbered several option scales (e.g. `Zombies = 1` became "Insane", `DayLength = 1` became 15 minutes) and loot options became direct multipliers, so servers created without `SANDBOX_*` overrides got extreme settings. Defaults now mirror the b42 "Apocalypse" preset (`server-files/media/lua/shared/Sandbox/Apocalypse.lua`)
-- `MAX_RAM`/`MIN_RAM`/`GC_CONFIG`/`JVM_EXTRA_ARGS` were silently ignored: the game's `ProjectZomboid64.json` passes vmArgs on the java command line, overriding `_JAVA_OPTIONS`. The entrypoint now patches the json on every start so the env vars take effect (idempotent, preserves all other vmArgs)
-
 ### Added
 - `SANDBOX_MODE` presets for performance: `apocalypse` (default), `performance` (world-cleanup: corpses 48h, blood 7d, rotten food 14d, rats off), `max` (adds reduced zombie population/rally groups for the best TPS)
 - Nested sandbox overrides via dot notation: `SANDBOX_ZombieConfig.PopulationMultiplier=0.5` and `SANDBOX_ZombieLore.Speed=4` write into the nested b42 tables (env overrides still win over `SANDBOX_MODE`)
-- Docker log rotation (`max-size: 10m`, `max-file: 3`) in both compose examples; `-trimpath` build flag for a smaller, reproducible entrypoint binary
-- PERFORMANCE.md: host kernel hints (THP=madvise, CPU governor, swappiness, UDP buffers, max_map_count, noatime) and host-networking option
 - `docs/PERFORMANCE.md` with JVM, sandbox, compose (cpuset/mem_limit/ulimits), storage and kernel tuning guidance
+- Docker log rotation (`max-size: 10m`, `max-file: 3`) in both compose examples; `-trimpath` build flag and `VERSION` build arg for a smaller, reproducible entrypoint binary with a `--version` flag
+- `SANDBOX_*` values are validated and rendered as safe Lua: control characters and invalid keys are rejected, strings are quoted automatically (also fixes unquoted values producing invalid Lua)
+- Server config validation: `SERVER_NAME` restricted to `[A-Za-z0-9_-]` (path traversal), `UDP_PORT` capped at 65534 (`SteamPort2 = UDP_PORT+1` overflow), `BACKUP_PATH` must resolve inside `DATA_DIR`
+- RCON packet size capped at 64KB (malicious/corrupt peers can no longer force huge allocations)
+- Docker HEALTHCHECK surfaces the underlying RCON error instead of a generic label
+- Health server is gracefully shut down and no longer coupled to the server manager; `internal/health` now has test coverage
+- Entrypoint orchestration extracted into a testable `run()` with error-path tests (`cmd/entrypoint`)
+- CI: publish workflow now runs `go test`/`go vet`/gofmt and a Trivy filesystem scan before building; image builds attach SBOM/provenance and are scanned with Trivy; `dependabot.yml` and `SECURITY.md` added
+- Compose: `stop_grace_period` raised to 120s (shutdown can exceed 60s), `init: true` (zombie reaping), multi-instance example uses profiles to stage servers
+
+### Fixed
+- Default sandbox values were Build 41 era: b42 renumbered several option scales (e.g. `Zombies = 1` became "Insane", `DayLength = 1` became 15 minutes) and loot options became direct multipliers, so servers created without `SANDBOX_*` overrides got extreme settings. Defaults now mirror the b42 "Apocalypse" preset (`server-files/media/lua/shared/Sandbox/Apocalypse.lua`)
+- `MAX_RAM`/`MIN_RAM`/`GC_CONFIG`/`JVM_EXTRA_ARGS` were silently ignored: the game's `ProjectZomboid64.json` passes vmArgs on the java command line, overriding `_JAVA_OPTIONS`. The entrypoint now patches the json on every start so the env vars take effect (idempotent, preserves all other vmArgs)
+- `SANDBOX_MODE` leaked into `SandboxVars.lua` as a stray `MODE` key
+- Server `.ini` written with mode 0600 (the RCON password was world-readable in the data bind mount)
+- `credentials.env` permissions re-tightened on every load; an unreadable credentials file now fails loudly instead of silently generating passwords that never persist
+- Base images digest-pinned (`golang:1.23-alpine`, `cm2network/steamcmd:root`) for supply-chain integrity
+- Removed the stale 9.8MB `entrypoint` binary from the repo root (gitignored build artifact)
+
+### Changed
+- Nested sandbox tables (flat `SANDBOX_ZombieConfig=...`) are only rendered through the mode/block builders; unsupported nested tables warn and are ignored
+- `backup.Manager.Scheduler` no longer takes the server manager (decoupled; RCON save only needs the config)
+- List parsing unified (`config.ParseList`) across config and steam packages
+
+## [0.1.0] - 2026-08-03
+
+### Added
 - Initial release
 - Go-based entrypoint with config generation (ini + lua)
 - SteamCMD integration for server install/update

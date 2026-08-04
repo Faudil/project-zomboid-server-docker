@@ -118,14 +118,6 @@ func (c *ServerConfig) SandboxVarsPath() string {
 	return c.DataDir + "/Server/" + c.ServerName + "_SandboxVars.lua"
 }
 
-func (c *ServerConfig) SpawnRegionsPath() string {
-	return c.DataDir + "/Server/" + c.ServerName + "_spawnregions.lua"
-}
-
-func (c *ServerConfig) SpawnPointsPath() string {
-	return c.DataDir + "/Server/" + c.ServerName + "_spawnpoints.lua"
-}
-
 func (c *ServerConfig) SavePath() string {
 	return c.DataDir + "/Saves/Multiplayer/" + c.ServerName
 }

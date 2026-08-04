@@ -1,7 +1,8 @@
 x-common: &common
   image: ghcr.io/faudil/project-zomboid-server-docker:latest
   restart: unless-stopped
-  stop_grace_period: 60s
+  stop_grace_period: 120s
+  init: true
   logging:
     driver: "json-file"
     options:
@@ -9,6 +10,10 @@ x-common: &common
       max-file: "3"
   env_file:
     - .env
+  # NOTE: both instances share the same read-write ./server-files mount.
+  # A simultaneous game update from both containers can corrupt the install,
+  # so stage updates one server at a time (profiles make this easy: start
+  # one, wait for it to become healthy, then start the other).
   volumes:
     - ./server-files:/home/steam/pzserver
 
@@ -16,6 +21,7 @@ services:
   zomboid-server1:
     <<: *common
     container_name: pz-server1
+    profiles: ["server1"]
     environment:
       - SERVER_NAME=server1
       - PUBLIC_NAME=Server One
@@ -34,6 +40,7 @@ services:
   zomboid-server2:
     <<: *common
     container_name: pz-server2
+    profiles: ["server2"]
     environment:
       - SERVER_NAME=server2
       - PUBLIC_NAME=Server Two

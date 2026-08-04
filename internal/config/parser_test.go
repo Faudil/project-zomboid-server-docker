@@ -205,7 +205,7 @@ func TestParseModWorkshopIDsDropsInvalid(t *testing.T) {
 }
 
 func TestParseList(t *testing.T) {
-	got := parseList("a; b ,c\td\n\ne")
+	got := ParseList("a; b ,c\td\n\ne")
 	want := []string{"a", "b", "c", "d", "e"}
 	if len(got) != len(want) {
 		t.Fatalf("parseList = %v, want %v", got, want)
@@ -215,13 +215,13 @@ func TestParseList(t *testing.T) {
 			t.Errorf("parseList[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	if got := parseList(" ; , "); len(got) != 0 {
+	if got := ParseList(" ; , "); len(got) != 0 {
 		t.Errorf("parseList of separators = %v, want empty", got)
 	}
 }
 
 func TestParseListDedupes(t *testing.T) {
-	got := parseList("x;y;x")
+	got := ParseList("x;y;x")
 	if len(got) != 2 || got[0] != "x" || got[1] != "y" {
 		t.Errorf("parseList = %v, want [x y]", got)
 	}
@@ -276,5 +276,67 @@ func TestLoadSandboxEnv(t *testing.T) {
 	}
 	if _, ok := cfg.SandboxVars["UNRELATED"]; ok {
 		t.Error("non-SANDBOX_ env leaked into SandboxVars")
+	}
+}
+
+func TestLoadSandboxEnvSkipsMode(t *testing.T) {
+	t.Setenv("SANDBOX_MODE", "performance")
+	t.Setenv("SANDBOX_Zombies", "4")
+
+	cfg := DefaultConfig()
+	if _, ok := cfg.SandboxVars["MODE"]; ok {
+		t.Error("SANDBOX_MODE leaked into SandboxVars as a bogus MODE key")
+	}
+	if cfg.SandboxVars["Zombies"] != "4" {
+		t.Errorf("SandboxVars[Zombies] = %q, want 4", cfg.SandboxVars["Zombies"])
+	}
+}
+
+func TestValidateServerNameCharset(t *testing.T) {
+	base := func(name string) *ServerConfig {
+		cfg := DefaultConfig()
+		cfg.ServerName = name
+		return cfg
+	}
+	for _, ok := range []string{"servertest", "my-server_1", "A"} {
+		if errs := base(ok).Validate(); len(errs) != 0 {
+			t.Errorf("ServerName %q should validate, got %v", ok, errs)
+		}
+	}
+	for _, bad := range []string{"../evil", "a/b", "a\\b", "a b", "a;b", "a..b", ""} {
+		if errs := base(bad).Validate(); len(errs) == 0 {
+			t.Errorf("ServerName %q should fail validation", bad)
+		}
+	}
+}
+
+func TestValidateBackupPathContained(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := DefaultConfig()
+	cfg.DataDir = dir
+	cfg.BackupPath = filepath.Join(dir, "backups")
+	if errs := cfg.Validate(); len(errs) != 0 {
+		t.Errorf("BACKUP_PATH inside DATA_DIR should validate, got %v", errs)
+	}
+
+	cfg.BackupPath = "/etc"
+	if errs := cfg.Validate(); len(errs) == 0 {
+		t.Error("BACKUP_PATH outside DATA_DIR should fail validation")
+	}
+}
+
+func TestValidateUDPPortCap(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.UDPPort = 65535
+	if errs := cfg.Validate(); len(errs) == 0 {
+		t.Error("UDP_PORT=65535 should fail (SteamPort2 overflows)")
+	}
+
+	cfg.UDPPort = 65534
+	for _, e := range cfg.Validate() {
+		if strings.Contains(e, "UDP_PORT") {
+			t.Errorf("UDP_PORT=65534 should pass the UDP range check, got: %s", e)
+		}
 	}
 }

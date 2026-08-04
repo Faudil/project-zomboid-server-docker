@@ -281,14 +281,7 @@ func splitIDs(raw string) []string {
 	if raw == "" {
 		return nil
 	}
-	var out []string
-	for _, id := range strings.Split(raw, ";") {
-		id = strings.TrimSpace(id)
-		if id != "" {
-			out = append(out, id)
-		}
-	}
-	return out
+	return config.ParseList(raw)
 }
 
 // collectionPageURL is the public Steam community page of a workshop

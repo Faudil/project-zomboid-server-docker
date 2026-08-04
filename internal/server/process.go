@@ -92,11 +92,9 @@ func (m *Manager) javaOptions() string {
 		fmt.Sprintf("-Xmx%s", m.cfg.MaxRam),
 	}
 	if m.cfg.GCConfig != "" {
-		gc := m.cfg.GCConfig
-		if !strings.HasSuffix(gc, "GC") {
-			gc += "GC"
+		if gc := config.NormalizeGC(m.cfg.GCConfig); gc != "" {
+			opts = append(opts, fmt.Sprintf("-XX:+Use%s", gc))
 		}
-		opts = append(opts, fmt.Sprintf("-XX:+Use%s", gc))
 	}
 	if m.cfg.JvmExtraArgs != "" {
 		opts = append(opts, strings.Fields(m.cfg.JvmExtraArgs)...)

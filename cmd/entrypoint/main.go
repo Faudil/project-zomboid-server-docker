@@ -15,6 +15,9 @@ import (
 	"github.com/faudil/project-zomboid-server-docker/internal/webhook"
 )
 
+// version is injected at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -24,9 +27,39 @@ func main() {
 		case "mods":
 			runMods()
 			return
+		case "--version", "-version":
+			fmt.Printf("project-zomboid-server-docker entrypoint %s\n", version)
+			return
 		}
 	}
 
+	if err := run(); err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// serverRunner is the subset of *server.Manager the orchestration needs, so
+// tests can substitute a fake.
+type serverRunner interface {
+	Start() error
+	Wait() error
+	Stop() error
+}
+
+// Seams for tests, following the package-level override pattern used across
+// this codebase.
+var (
+	installOrUpdate    = steam.InstallOrUpdate
+	resolveModWorkshop = steam.ResolveModWorkshopIDs
+	downloadWorkshop   = steam.DownloadWorkshopItems
+	discoverModNames   = steam.DiscoverModNames
+	warnMissingMods    = steam.WarnMissingMods
+	newServerManager   = server.NewManager
+	newBackupManager   = backup.NewManager
+)
+
+func run() error {
 	cfg := config.DefaultConfig()
 
 	if errs := cfg.Validate(); len(errs) > 0 {
@@ -34,7 +67,7 @@ func main() {
 		for _, e := range errs {
 			fmt.Printf("  - %s\n", e)
 		}
-		os.Exit(1)
+		return fmt.Errorf("configuration validation failed")
 	}
 
 	if errs := cfg.CheckWritable(); len(errs) > 0 {
@@ -50,12 +83,11 @@ func main() {
 		fmt.Println("  sudo chown -R 1000:1000 data server-files backups")
 		fmt.Println()
 		fmt.Println("then restart the container.")
-		os.Exit(1)
+		return fmt.Errorf("volumes are not writable")
 	}
 
 	if err := cfg.EnsurePasswords(); err != nil {
-		fmt.Printf("ERROR resolving credentials: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("resolving credentials: %w", err)
 	}
 
 	fmt.Printf("Starting Project Zomboid server: %s\n", cfg.PublicName)
@@ -63,8 +95,7 @@ func main() {
 	fmt.Printf("Passwords (auto-generated unless set in .env) are stored in: %s\n", cfg.CredentialsPath())
 
 	// Health server starts early so Docker can observe the install phase.
-	srv := server.NewManager(cfg)
-	healthSrv := health.NewServer(srv)
+	healthSrv := health.NewServer()
 	healthSrv.SetStatus("installing")
 	go func() {
 		if err := healthSrv.ListenAndServe(8080); err != nil {
@@ -72,41 +103,38 @@ func main() {
 		}
 	}()
 
-	if err := steam.InstallOrUpdate(cfg); err != nil {
-		fmt.Printf("ERROR installing/updating server: %v\n", err)
-		os.Exit(1)
+	if err := installOrUpdate(cfg); err != nil {
+		return fmt.Errorf("installing/updating server: %w", err)
 	}
 	fmt.Println("Server files up to date")
 
 	// Resolve collections, download workshop items, and derive mod folder
 	// names before writing the ini so Mods= is populated automatically.
-	modIDs := steam.ResolveModWorkshopIDs(cfg)
+	modIDs := resolveModWorkshop(cfg)
 	if len(modIDs) > 0 {
 		cfg.ModWorkshopIDs = strings.Join(modIDs, ";")
-		if err := steam.DownloadWorkshopItems(cfg, modIDs); err != nil {
+		if err := downloadWorkshop(cfg, modIDs); err != nil {
 			fmt.Printf("ERROR downloading workshop mods: %v\n", err)
 		}
 	}
 
 	if cfg.ModNames == "" {
-		names := steam.DiscoverModNames(cfg)
+		names := discoverModNames(cfg)
 		if len(names) > 0 {
 			cfg.ModNames = strings.Join(names, ";")
 			fmt.Printf("Auto-detected mods (MOD_NAMES): %s\n", cfg.ModNames)
 		}
 	} else {
-		steam.WarnMissingMods(cfg)
+		warnMissingMods(cfg)
 	}
 
 	if err := cfg.WriteIni(); err != nil {
-		fmt.Printf("ERROR writing server.ini: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("writing server.ini: %w", err)
 	}
 	fmt.Println("Server configuration written")
 
 	if err := cfg.WriteSandboxVars(); err != nil {
-		fmt.Printf("ERROR writing SandboxVars.lua: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("writing SandboxVars.lua: %w", err)
 	}
 
 	// The launcher passes vmArgs from ProjectZomboid64.json on the java
@@ -122,10 +150,10 @@ func main() {
 	discord.NotifyStart()
 
 	healthSrv.SetStatus("starting")
+	srv := newServerManager(cfg)
 	if err := srv.Start(); err != nil {
-		fmt.Printf("ERROR starting server: %v\n", err)
 		discord.NotifyCrash(err)
-		os.Exit(1)
+		return fmt.Errorf("starting server: %w", err)
 	}
 
 	// First boot with anonymous Steam: steamcmd cannot download workshop items
@@ -143,8 +171,8 @@ func main() {
 		}()
 	}
 
-	bk := backup.NewManager(cfg)
-	bk.Scheduler(srv)
+	bk := newBackupManager(cfg)
+	bk.Scheduler()
 
 	// Single owner of signal handling: the shutdown path below. Manager.Wait()
 	// only waits for the server process to exit.
@@ -171,6 +199,7 @@ func main() {
 			os.Exit(1)
 		}
 		bk.Run() // final backup
+		healthSrv.Shutdown()
 		os.Exit(0)
 	}()
 
@@ -178,30 +207,32 @@ func main() {
 
 	// Block until the server exits on its own (crash) or shutdown completes.
 	if err := srv.Wait(); err != nil {
-		fmt.Printf("Server exited: %v\n", err)
 		discord.NotifyCrash(err)
-		os.Exit(1)
+		healthSrv.Shutdown()
+		return fmt.Errorf("server exited: %w", err)
 	}
 
+	healthSrv.Shutdown()
 	fmt.Println("Server exited cleanly")
+	return nil
 }
 
 func runHealthcheck() {
 	cfg := config.DefaultConfig()
 	if err := cfg.EnsurePasswords(); err != nil {
-		fmt.Println("Healthcheck failed: cannot load credentials")
+		fmt.Printf("Healthcheck failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	client := server.NewRCONClient(cfg)
 	if err := client.Connect(); err != nil {
-		fmt.Println("Healthcheck failed: RCON connection error")
+		fmt.Printf("Healthcheck failed: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
 
 	if err := client.Ping(); err != nil {
-		fmt.Println("Healthcheck failed: RCON ping error")
+		fmt.Printf("Healthcheck failed: %v\n", err)
 		os.Exit(1)
 	}
 

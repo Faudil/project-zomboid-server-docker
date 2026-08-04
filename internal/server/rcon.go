@@ -24,6 +24,10 @@ const (
 	rconTypeResponse = 0 // SERVERDATA_RESPONSE_VALUE
 	rconTypeExec     = 2 // SERVERDATA_EXECCOMMAND / SERVERDATA_AUTH_RESPONSE
 	rconTypeAuth     = 3 // SERVERDATA_AUTH
+
+	// maxRCONPacket caps the size of an incoming packet so a corrupt or
+	// malicious RCON peer cannot force a huge allocation.
+	maxRCONPacket = 64 * 1024
 )
 
 type RCONClient struct {
@@ -61,6 +65,9 @@ func (r *RCONClient) readPacket() (id, typ int32, body string, err error) {
 	size := int32(binary.LittleEndian.Uint32(sizeBuf[:]))
 	if size < 8 {
 		return 0, 0, "", fmt.Errorf("short RCON packet (%d bytes)", size)
+	}
+	if size > maxRCONPacket {
+		return 0, 0, "", fmt.Errorf("RCON packet too large (%d bytes)", size)
 	}
 	payload := make([]byte, size)
 	if _, err = io.ReadFull(r.conn, payload); err != nil {
@@ -129,6 +136,9 @@ func (r *RCONClient) SendCommand(cmd string) (string, error) {
 	if r.conn == nil {
 		return "", fmt.Errorf("not connected to RCON")
 	}
+	// Always clear the deadline again: a stale one would break any reuse of
+	// the connection (clients are single-use today, but stay safe).
+	defer r.conn.SetReadDeadline(time.Time{})
 
 	id := r.newID()
 	if err := r.writePacket(id, rconTypeExec, cmd); err != nil {

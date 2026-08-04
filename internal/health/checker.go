@@ -1,23 +1,22 @@
 package health
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
-
-	"github.com/faudil/project-zomboid-server-docker/internal/server"
+	"time"
 )
 
 type Server struct {
 	mu     sync.RWMutex
 	status string
-	srv    *server.Manager
+	http   *http.Server
 }
 
-func NewServer(srv *server.Manager) *Server {
+func NewServer() *Server {
 	return &Server{
 		status: "starting",
-		srv:    srv,
 	}
 }
 
@@ -49,5 +48,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ListenAndServe(port int) error {
 	mux := http.NewServeMux()
 	mux.Handle("/", s)
-	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+	s.http = &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return s.http.ListenAndServe()
+}
+
+// Shutdown stops the HTTP server with a short grace period so in-flight
+// health probes complete.
+func (s *Server) Shutdown() {
+	if s.http == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.http.Shutdown(ctx)
 }

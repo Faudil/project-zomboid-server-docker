@@ -6,9 +6,15 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// validServerNameRE restricts SERVER_NAME to a safe subset used to build
+// file paths (ini, SandboxVars.lua, save dir, backup names). Anything else
+// could traverse outside the data dir.
+var validServerNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func envInt(key string, fallback int) int {
 	v, ok := os.LookupEnv(key)
@@ -40,18 +46,18 @@ func envBool(key string, fallback bool) bool {
 	}
 }
 
-func generatePassword() string {
+func generatePassword() (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	length := 16
 	result := make([]byte, length)
 	for i := range result {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
-			panic(err)
+			return "", fmt.Errorf("generating random password: %w", err)
 		}
 		result[i] = charset[n.Int64()]
 	}
-	return string(result)
+	return string(result), nil
 }
 
 // CredentialsPath returns the file where auto-generated passwords are persisted.
@@ -67,13 +73,22 @@ func (c *ServerConfig) CredentialsPath() string {
 func (c *ServerConfig) EnsurePasswords() error {
 	path := c.CredentialsPath()
 
+	var err error
 	if vals, err := readEnvFile(path); err == nil {
+		// Defensive: the file may pre-exist with loose permissions (created by a
+		// host tool or copied in). Re-tighten on every load.
+		_ = os.Chmod(path, 0600)
 		if c.RCONPassword == "" {
 			c.RCONPassword = vals["RCON_PASSWORD"]
 		}
 		if c.AdminPassword == "" {
 			c.AdminPassword = vals["ADMIN_PASSWORD"]
 		}
+	} else if !os.IsNotExist(err) {
+		// The file exists but cannot be read (bad permissions, truncation). Fail
+		// loudly instead of silently generating fresh passwords that would not
+		// be persisted (O_EXCL) and flap on every process start.
+		return fmt.Errorf("reading credentials file %s: %w", path, err)
 	}
 
 	if c.RCONPassword != "" && c.AdminPassword != "" {
@@ -81,10 +96,14 @@ func (c *ServerConfig) EnsurePasswords() error {
 	}
 
 	if c.RCONPassword == "" {
-		c.RCONPassword = generatePassword()
+		if c.RCONPassword, err = generatePassword(); err != nil {
+			return err
+		}
 	}
 	if c.AdminPassword == "" {
-		c.AdminPassword = generatePassword()
+		if c.AdminPassword, err = generatePassword(); err != nil {
+			return err
+		}
 	}
 
 	if err := c.writeCredentials(path); err != nil {
@@ -152,9 +171,9 @@ func readEnvFile(path string) (map[string]string, error) {
 	return vals, nil
 }
 
-// parseList splits a semicolon/comma/whitespace separated list, trimming and
-// dropping empty entries while preserving order.
-func parseList(raw string) []string {
+// ParseList splits a semicolon/comma/whitespace separated list, trimming and
+// dropping empty and duplicate entries while preserving order.
+func ParseList(raw string) []string {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ';' || r == ',' || r == ' ' || r == '\t' || r == '\n'
 	})
@@ -174,12 +193,12 @@ func parseList(raw string) []string {
 // workshop/collection IDs with a warning.
 func (c *ServerConfig) ParseModWorkshopIDs() {
 	c.ModWorkshopIDs = joinNumericList(c.ModWorkshopIDs)
-	c.ModNames = strings.Join(parseList(c.ModNames), ";")
+	c.ModNames = strings.Join(ParseList(c.ModNames), ";")
 	c.ModWorkshopCollection = joinNumericList(c.ModWorkshopCollection)
 }
 
 func joinNumericList(raw string) string {
-	parts := parseList(raw)
+	parts := ParseList(raw)
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if _, err := strconv.Atoi(p); err != nil {
@@ -200,7 +219,12 @@ func (c *ServerConfig) loadSandboxEnv() {
 			continue
 		}
 		if strings.HasPrefix(k, "SANDBOX_") {
-			c.SandboxVars[strings.TrimPrefix(k, "SANDBOX_")] = v
+			key := strings.TrimPrefix(k, "SANDBOX_")
+			if key == "MODE" {
+				// SANDBOX_MODE selects a preset; it is not a sandbox key itself.
+				continue
+			}
+			c.SandboxVars[key] = v
 		}
 	}
 }
@@ -210,12 +234,14 @@ func (c *ServerConfig) Validate() []string {
 
 	if c.ServerName == "" {
 		errors = append(errors, "SERVER_NAME must not be empty")
+	} else if !validServerNameRE.MatchString(c.ServerName) {
+		errors = append(errors, fmt.Sprintf("SERVER_NAME %q contains invalid characters: only letters, digits, '_' and '-' are allowed (it is used in file paths)", c.ServerName))
 	}
 	if c.DefaultPort < 1 || c.DefaultPort > 65535 {
 		errors = append(errors, "DEFAULT_PORT must be between 1 and 65535")
 	}
-	if c.UDPPort < 1 || c.UDPPort > 65535 {
-		errors = append(errors, "UDP_PORT must be between 1 and 65535")
+	if c.UDPPort < 1 || c.UDPPort > 65534 {
+		errors = append(errors, "UDP_PORT must be between 1 and 65534 (SteamPort2 is UDP_PORT+1)")
 	}
 	if c.RCONPort < 1 || c.RCONPort > 65535 {
 		errors = append(errors, "RCON_PORT must be between 1 and 65535")
@@ -244,6 +270,19 @@ func (c *ServerConfig) Validate() []string {
 	if !sandboxModes[c.SandboxMode] {
 		errors = append(errors, fmt.Sprintf("SANDBOX_MODE must be one of apocalypse, performance, max (got %q)", c.SandboxMode))
 	}
+	// BACKUP_PATH is used with os.Create + rotation (deletions); require it to
+	// stay inside the data dir so a misconfigured value cannot write to or
+	// rotate files in the game install or other mounts.
+	if !pathWithin(c.DataDir, c.BackupPath) {
+		errors = append(errors, fmt.Sprintf("BACKUP_PATH %q must resolve inside DATA_DIR %q", c.BackupPath, c.DataDir))
+	}
 
 	return errors
+}
+
+// pathWithin reports whether path, after cleaning, is inside or equal to base.
+func pathWithin(base, path string) bool {
+	cleanBase := filepath.Clean(base)
+	cleanPath := filepath.Clean(path)
+	return cleanPath == cleanBase || strings.HasPrefix(cleanPath, cleanBase+string(filepath.Separator))
 }

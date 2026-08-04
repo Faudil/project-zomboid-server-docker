@@ -4,10 +4,53 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
 
+// validSandboxKeyRE restricts sandbox keys to characters safe for Lua table
+// keys. Nested keys use a single dot (ZombieConfig.PopulationMultiplier).
+var validSandboxKeyRE = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
+
+func validSandboxKey(k string) bool {
+	return validSandboxKeyRE.MatchString(k)
+}
+
+// validLuaValue reports whether a sandbox value contains no control
+// characters. Values are written into SandboxVars.lua, which the server
+// executes; anything else would allow Lua injection.
+func validLuaValue(v string) bool {
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// luaValue renders a sandbox value as valid Lua: booleans and numbers stay
+// raw, everything else is quoted as a string (escaping quotes/backslashes).
+// Pre-quoted values pass through unchanged.
+func luaValue(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "true" || v == "false" {
+		return v
+	}
+	if luaNumRE.MatchString(v) {
+		return v
+	}
+	if len(v) >= 2 && ((v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'')) {
+		return v
+	}
+	escaped := strings.ReplaceAll(v, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
+}
+
+var luaNumRE = regexp.MustCompile(`^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)$`)
+
+// WriteSandboxVars writes the generated SandboxVars.lua for this server.
 func (c *ServerConfig) WriteSandboxVars() error {
 	dir := filepath.Dir(c.SandboxVarsPath())
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -72,17 +115,19 @@ func (c *ServerConfig) WriteSandboxVars() error {
 		"DarknessNight":  "NightDarkness",
 	}
 
-	// SANDBOX_MODE applies gameplay/performance presets on top of the base
-	// Apocalypse values. SANDBOX_* env overrides below always win over them.
-	for k, v := range sandboxModeOverrides(c.SandboxMode) {
-		vars[k] = v
-	}
-
 	nested := map[string]map[string]string{}
 	for k, v := range c.SandboxVars {
+		if !validSandboxKey(k) {
+			fmt.Printf("WARNING: SANDBOX_%s: invalid key, ignoring (allowed: letters, digits, '_', '.')\n", k)
+			continue
+		}
+		if !validLuaValue(v) {
+			fmt.Printf("WARNING: SANDBOX_%s: value contains control characters, ignoring\n", k)
+			continue
+		}
 		if alias, ok := legacyAliases[k]; ok {
 			fmt.Printf("WARNING: SANDBOX_%s was renamed in b42, applying it to %s\n", k, alias)
-			vars[alias] = v
+			vars[alias] = luaValue(v)
 			continue
 		}
 		// Nested keys use dot notation: SANDBOX_ZombieConfig.PopulationMultiplier=0.5
@@ -94,13 +139,13 @@ func (c *ServerConfig) WriteSandboxVars() error {
 				if nested[section] == nil {
 					nested[section] = map[string]string{}
 				}
-				nested[section][sub] = v
+				nested[section][sub] = luaValue(v)
 			default:
 				fmt.Printf("WARNING: SANDBOX_%s: %q is not a supported nested sandbox table, ignoring\n", k, section)
 			}
 			continue
 		}
-		vars[k] = v
+		vars[k] = luaValue(v)
 	}
 
 	// Render the nested tables last so SANDBOX_MODE presets and SANDBOX_*

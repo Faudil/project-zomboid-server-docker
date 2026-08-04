@@ -6,7 +6,7 @@ All server configuration is done through environment variables in `.env`. The co
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SERVER_NAME` | string | `servertest` | Internal server name. Determines save folder name |
+| `SERVER_NAME` | string | `servertest` | Internal server name. Determines save folder name. Restricted to letters, digits, `_` and `-` (it is embedded in file paths) |
 | `PUBLIC_NAME` | string | `My PZ Server` | Name shown in server browser |
 | `PUBLIC_SERVER` | bool | `true` | List server in public browser |
 
@@ -32,7 +32,7 @@ they are intentionally not printed to the container logs.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `DEFAULT_PORT` | int | `16261` | Main game port (UDP) |
-| `UDP_PORT` | int | `16262` | Steam direct connection port (UDP) |
+| `UDP_PORT` | int | `16262` | Steam direct connection port (UDP). Max `65534` (the game uses `UDP_PORT+1` for `SteamPort2`) |
 | `BIND_IP` | string | `0.0.0.0` | IP address to bind to |
 
 ## Players & Gameplay
@@ -99,6 +99,11 @@ ZombieLore = {
 
 `SANDBOX_*` overrides (flat and nested) always win over `SANDBOX_MODE`.
 
+Values are rendered as safe Lua: numbers and `true`/`false` stay raw, any
+other value is quoted as a string automatically (no need to quote yourself),
+and values containing control characters or keys outside `[A-Za-z0-9_.]` are
+rejected with a warning.
+
 `SANDBOX_MODE` applies a preset over the built-in b42 Apocalypse defaults:
 
 | Value | Description |
@@ -147,7 +152,7 @@ first login; the session is remembered afterwards.
 | `BACKUP_ENABLED` | bool | `false` | Enable automatic backups |
 | `BACKUP_INTERVAL` | int | `360` | Minutes between backups |
 | `BACKUP_MAX_COUNT` | int | `24` | Max backups to keep |
-| `BACKUP_PATH` | string | `/home/steam/Zomboid/backups` | Backup directory |
+| `BACKUP_PATH` | string | `/home/steam/Zomboid/backups` | Backup directory. Must resolve inside `DATA_DIR` (validation fails otherwise) |
 
 ## Discord
 

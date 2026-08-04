@@ -12,11 +12,42 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: test -z "$(gofmt -l .)"
+
+      - name: go test
+        run: go test ./...
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +81,28 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy image scan
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Upload Trivy scan results
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
 
       - name: Check Docker Hub credentials
         id: dockerhub
@@ -78,6 +129,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/project-zomboid-server:${{ steps.meta.outputs.version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/project-zomboid-server:latest

@@ -1,4 +1,6 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.23-alpine@sha256:a7ecaac5efda22510d8c903bdc6b19026543f1eac3317d47363680df22161bd8 AS builder
+
+ARG VERSION=dev
 
 RUN apk add --no-cache git=2.49.1-r0
 
@@ -12,9 +14,9 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /entrypoint ./cmd/entrypoint
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /entrypoint ./cmd/entrypoint
 
-FROM cm2network/steamcmd:root
+FROM cm2network/steamcmd:root@sha256:e6b6b3503bf0e41feafe12dc709c90151afba193e1292cac55d28a7d470b1493
 
 LABEL maintainer="faudil"
 LABEL org.opencontainers.image.description="Project Zomboid Dedicated Server Docker"

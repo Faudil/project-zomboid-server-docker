@@ -18,6 +18,18 @@ type launcherJson struct {
 	VMArgs    []string `json:"vmArgs"`
 }
 
+// NormalizeGC canonicalizes a GC_CONFIG value (ZGC, G1, Parallel, ...) into
+// the JVM flag suffix form used by -XX:+Use<GC>.
+func NormalizeGC(gc string) string {
+	if gc == "" {
+		return ""
+	}
+	if strings.HasSuffix(gc, "GC") {
+		return gc
+	}
+	return gc + "GC"
+}
+
 // PatchLauncherJson rewrites <ServerDir>/ProjectZomboid64.json so the JVM
 // heap and GC settings from the environment take effect. It is idempotent
 // and preserves every vmArg it does not own. A missing file is not an error
@@ -54,11 +66,8 @@ func (c *ServerConfig) PatchLauncherJson() error {
 		fmt.Sprintf("-Xms%s", c.MinRam),
 		fmt.Sprintf("-Xmx%s", c.MaxRam),
 	}
-	gc := c.GCConfig
+	gc := NormalizeGC(c.GCConfig)
 	if gc != "" {
-		if !strings.HasSuffix(gc, "GC") {
-			gc += "GC"
-		}
 		vmArgs = append(vmArgs, fmt.Sprintf("-XX:+Use%s", gc))
 	}
 	vmArgs = append(vmArgs, kept...)

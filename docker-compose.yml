@@ -3,7 +3,8 @@ services:
     image: ghcr.io/faudil/project-zomboid-server-docker:latest
     container_name: project-zomboid
     restart: unless-stopped
-    stop_grace_period: 60s
+    stop_grace_period: 120s
+    init: true
     logging:
       driver: "json-file"
       options:
