@@ -1,8 +1,8 @@
-FROM golang:1.23-alpine@sha256:a7ecaac5efda22510d8c903bdc6b19026543f1eac3317d47363680df22161bd8 AS builder
+FROM golang:1.25-alpine@sha256:2b6edeb8c6b1071bfa16473f24bb7b7da0b1579009f97bb1542f239b14aabd8f AS builder
 
 ARG VERSION=dev
 
-RUN apk add --no-cache git=2.49.1-r0
+RUN apk add --no-cache git=2.54.0-r0
 
 WORKDIR /build
 
@@ -30,8 +30,15 @@ RUN apt-get update && \
         lib32gcc-s1=14.2.0-19 \
         lib32stdc++6=14.2.0-19 \
         ca-certificates=20250419 \
-        tzdata=2025b-4+deb13u1 \
-        unzip=6.0-29 && \
+        tzdata=2026b-0+deb13u1 \
+        unzip=6.0-29 \
+        openssl=3.5.6-1~deb13u2 \
+        libssh2-1t64=1.11.1-1+deb13u1 \
+        curl=8.14.1-2+deb13u4 \
+        libcap2=1:2.75-10+deb13u1+b1 \
+        libgnutls30t64=3.8.9-3+deb13u4 \
+        libgssapi-krb5-2=1.21.3-5+deb13u1 \
+        libnghttp2-14=1.64.0-1.1+deb13u1 && \
     rm -rf /var/lib/apt/lists/*
 
 # DepotDownloader replaces SteamCMD's app_update, which Steam's backend
