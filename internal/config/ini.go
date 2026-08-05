@@ -4,8 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 )
+
+// validIniKeyRE restricts INI_* passthrough keys to plain option names.
+// Anything else (sections like [GameOptions], comments, separators) could
+// inject extra directives into server.ini.
+var validIniKeyRE = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 func (c *ServerConfig) WriteIni() error {
 	dir := filepath.Dir(c.ServerIniPath())
@@ -63,6 +70,38 @@ func (c *ServerConfig) WriteIni() error {
 	sb.WriteString("SaveTransactionID=false\n")
 	sb.WriteString("DisableSafehouse=false\n")
 	sb.WriteString("ServerPlayerID=0\n")
+
+	// INI_* env passthrough: INI_SleepAllowed=true becomes SleepAllowed=true.
+	// Sorted for deterministic output; keys are validated and values are
+	// passed through iniValue to strip anything that could break the format.
+	// Keys already written above are skipped so one setting cannot be
+	// defined twice in the file.
+	fixedKeys := map[string]bool{
+		"PublicName": true, "Public": true, "Open": true, "Password": true,
+		"MaxPlayers": true, "DefaultPort": true, "SteamPort1": true,
+		"RCONPort": true, "RCONPassword": true, "SteamPort2": true,
+		"BindIP": true, "PauseEmpty": true, "SaveWorldEveryMinutes": true,
+		"PVP": true, "SteamVAC": true, "Mods": true, "WorkshopItems": true,
+		"Map": true, "VoiceMaxDistance": true, "ServerWelcomeMessage": true,
+		"ServerLogFileName": true, "LogLocalChat": true, "LogGlobalChat": true,
+		"SaveTransactionID": true, "DisableSafehouse": true, "ServerPlayerID": true,
+	}
+	keys := make([]string, 0, len(c.IniOptions))
+	for k := range c.IniOptions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if fixedKeys[k] {
+			fmt.Printf("WARNING: INI_%s is already managed by this image, ignoring\n", k)
+			continue
+		}
+		if !validIniKeyRE.MatchString(k) {
+			fmt.Printf("WARNING: INI_%s: invalid key, ignoring (allowed: letters and digits)\n", k)
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("%s=%s\n", k, iniValue(c.IniOptions[k])))
+	}
 
 	// The game rewrites this file itself on exit; 0600 keeps the RCON password
 	// unreadable to other users in the data bind mount while we own it.

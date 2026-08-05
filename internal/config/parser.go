@@ -229,6 +229,24 @@ func (c *ServerConfig) loadSandboxEnv() {
 	}
 }
 
+// loadIniEnv maps every INI_* environment variable onto IniOptions.
+// For example INI_SleepAllowed=true becomes SleepAllowed=true in server.ini.
+func (c *ServerConfig) loadIniEnv() {
+	for _, kv := range os.Environ() {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(k, "INI_") {
+			key := strings.TrimPrefix(k, "INI_")
+			if key == "" {
+				continue
+			}
+			c.IniOptions[key] = v
+		}
+	}
+}
+
 func (c *ServerConfig) Validate() []string {
 	var errors []string
 

@@ -21,5 +21,5 @@ third-party binaries outside this project's control.
   control (the repo `.gitignore` already excludes them).
 - Do not publish the RCON port (`27015`) to the public internet; it speaks
   plaintext Source RCON. Restrict it to trusted networks if exposed.
-- `SERVER_NAME`, `SANDBOX_*`, and `BACKUP_PATH` are validated at startup;
-  any configuration error aborts the container with a clear message.
+- `SERVER_NAME`, `SANDBOX_*`, `INI_*`, and `BACKUP_PATH` are validated at
+  startup; any configuration error aborts the container with a clear message.

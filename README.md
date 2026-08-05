@@ -122,6 +122,8 @@ See [CONFIGURATION.md](docs/CONFIGURATION.md) for the full reference. The most i
 | `STEAM_USER` / `STEAM_PASS` | (empty) | Optional Steam account (owns Project Zomboid) — only needed for private branches or workshop mods when anonymous downloads fail |
 | `BACKUP_ENABLED` | `false` | Enable auto-backups |
 | `DISCORD_WEBHOOK_URL` | (empty) | Discord webhook URL |
+| `SANDBOX_*` | (empty) | Any `SANDBOX_`-prefixed variable becomes a `SandboxVars.lua` key (gameplay tuning) |
+| `INI_*` | (empty) | Any `INI_`-prefixed variable becomes a `server.ini` option, e.g. `INI_SleepAllowed=true` |
 
 ## Multi-Instance
 

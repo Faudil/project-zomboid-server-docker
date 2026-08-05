@@ -114,6 +114,28 @@ rejected with a warning.
 
 `SANDBOX_*` variables always override `SANDBOX_MODE`.
 
+## Server Options (INI)
+
+Settings that live in `Server/<SERVER_NAME>.ini` (rather than the sandbox) are
+written through a generic passthrough. Any environment variable prefixed with
+`INI_` is written there with the prefix stripped:
+
+```env
+INI_SleepAllowed=true
+INI_SleepNeeded=false
+INI_Faction=true
+```
+
+Keys already managed by dedicated variables (`MAX_PLAYERS`, `PVP`, ...) are
+ignored with a warning. Key names are restricted to letters and digits, and
+values are sanitized so nothing can inject extra directives into the `.ini`.
+
+The PZ server writes this file from its own defaults on first start; the
+container rewrites it on every start, so `INI_*` overrides persist across
+restarts. See the [PZ wiki](https://pzwiki.net/wiki/Server_settings) for valid
+key names (e.g. `SleepAllowed`, `SleepNeeded`, `FastForwardMultiplier`,
+safehouse and faction options).
+
 ## Mods
 
 | Variable | Type | Default | Description |

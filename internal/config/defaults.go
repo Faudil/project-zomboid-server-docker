@@ -53,6 +53,7 @@ type ServerConfig struct {
 	SandboxMode           string
 
 	SandboxVars map[string]string
+	IniOptions  map[string]string
 }
 
 func DefaultConfig() *ServerConfig {
@@ -102,9 +103,11 @@ func DefaultConfig() *ServerConfig {
 		DataDir:               envStr("DATA_DIR", "/home/steam/Zomboid"),
 		SandboxMode:           envStr("SANDBOX_MODE", "apocalypse"),
 		SandboxVars:           map[string]string{},
+		IniOptions:            map[string]string{},
 	}
 
 	c.loadSandboxEnv()
+	c.loadIniEnv()
 	c.ParseModWorkshopIDs()
 
 	return c
