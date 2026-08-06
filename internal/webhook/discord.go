@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/faudil/project-zomboid-server-docker/internal/config"
@@ -92,4 +93,25 @@ func (d *DiscordWebhook) NotifyCrash(err error) {
 		return
 	}
 	_ = d.Send("\U0001f4a5 Server Crashed", fmt.Sprintf("**%s** exited unexpectedly: %v", d.cfg.PublicName, err), 0xFEE75C)
+}
+
+// NotifyUpdate announces an imminent automatic restart for updates.
+func (d *DiscordWebhook) NotifyUpdate(updatedMods []string, gameUpdated bool) {
+	if d == nil || !d.cfg.DiscordUpdate {
+		return
+	}
+
+	var parts []string
+	if gameUpdated {
+		parts = append(parts, "a new game build")
+	}
+	if len(updatedMods) > 0 {
+		parts = append(parts, fmt.Sprintf("%d workshop mod(s)", len(updatedMods)))
+	}
+	if len(parts) == 0 {
+		return
+	}
+
+	desc := fmt.Sprintf("**%s** will restart shortly to apply %s.", d.cfg.PublicName, strings.Join(parts, " and "))
+	_ = d.Send("\U0001f504 Server Restarting for Updates", desc, 0x5865F2)
 }

@@ -189,6 +189,54 @@ func (r *RCONClient) Ping() error {
 	return nil
 }
 
+// Broadcast sends a chat message visible to all players on the server.
+func (r *RCONClient) Broadcast(message string) error {
+	if r.conn == nil {
+		return fmt.Errorf("not connected to RCON")
+	}
+	if _, err := r.SendCommand(fmt.Sprintf("servermsg %q", message)); err != nil {
+		return fmt.Errorf("broadcasting server message: %w", err)
+	}
+	return nil
+}
+
+// PlayerCount returns the number of players currently online, parsed from the
+// RCON "players" response. Lines that do not look like player names (headers,
+// separators, "no players" notices) are ignored, so the count can only
+// overestimate on exotic responses - never underestimate.
+func (r *RCONClient) PlayerCount() (int, error) {
+	if r.conn == nil {
+		return 0, fmt.Errorf("not connected to RCON")
+	}
+	response, err := r.SendCommand("players")
+	if err != nil {
+		return 0, fmt.Errorf("querying players: %w", err)
+	}
+	return ParsePlayerCount(response), nil
+}
+
+// ParsePlayerCount turns the output of the RCON "players" command into a
+// player count. Empty output and "no players" style responses count as zero.
+func ParsePlayerCount(response string) int {
+	count := 0
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "no player") || strings.Contains(lower, "nobody") {
+			return 0
+		}
+		if strings.HasPrefix(lower, "player") || strings.HasPrefix(lower, "-") ||
+			strings.HasPrefix(lower, "=") || strings.HasPrefix(lower, "name") {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 func (r *RCONClient) Close() {
 	if r.conn != nil {
 		r.conn.Close()

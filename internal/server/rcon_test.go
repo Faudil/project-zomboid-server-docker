@@ -193,3 +193,27 @@ func TestRCONConnectRefused(t *testing.T) {
 		t.Errorf("Connect took %v, dialer timeout too long", elapsed)
 	}
 }
+
+func TestParsePlayerCount(t *testing.T) {
+	cases := []struct {
+		name     string
+		response string
+		want     int
+	}{
+		{"empty", "", 0},
+		{"blank lines", "\n\n  \n", 0},
+		{"two players", "Alice\nBob", 2},
+		{"trailing newline", "Alice\nBob\n", 2},
+		{"no players notice", "No players online", 0},
+		{"no players lowercase", "There are no players connected", 0},
+		{"header lines skipped", "Players:\n------\nAlice\nBob", 2},
+		{"player prefix skipped", "Player Name\nAlice", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ParsePlayerCount(tc.response); got != tc.want {
+				t.Errorf("ParsePlayerCount(%q) = %d, want %d", tc.response, got, tc.want)
+			}
+		})
+	}
+}

@@ -28,6 +28,11 @@ type ServerConfig struct {
 	ModWorkshopIDs        string
 	ModWorkshopCollection string
 	ModUpdateOnStart      bool
+	AutoUpdate            bool
+	AutoUpdateInterval    int
+	AutoUpdateAnnounce    int
+	AutoUpdateWaitEmpty   bool
+	AutoUpdateWaitMax     int
 	SteamAPIKey           string
 	MaxRam                string
 	MinRam                string
@@ -47,6 +52,7 @@ type ServerConfig struct {
 	DiscordStart          bool
 	DiscordStop           bool
 	DiscordCrash          bool
+	DiscordUpdate         bool
 	TZ                    string
 	ServerDir             string
 	DataDir               string
@@ -79,6 +85,11 @@ func DefaultConfig() *ServerConfig {
 		ModWorkshopIDs:        envStr("MOD_WORKSHOP_IDS", ""),
 		ModWorkshopCollection: envStr("MOD_WORKSHOP_COLLECTION_IDS", ""),
 		ModUpdateOnStart:      envBool("MOD_UPDATE_ON_START", false),
+		AutoUpdate:            envBool("MOD_AUTO_UPDATE", false),
+		AutoUpdateInterval:    envInt("MOD_AUTO_UPDATE_INTERVAL", 60),
+		AutoUpdateAnnounce:    envInt("MOD_AUTO_UPDATE_ANNOUNCE", 5),
+		AutoUpdateWaitEmpty:   envBool("MOD_AUTO_UPDATE_WAIT_EMPTY", true),
+		AutoUpdateWaitMax:     envInt("MOD_AUTO_UPDATE_WAIT_MAX", 2),
 		SteamAPIKey:           envStr("STEAM_API_KEY", ""),
 		MaxRam:                envStr("MAX_RAM", "4096m"),
 		MinRam:                envStr("MIN_RAM", "4096m"),
@@ -98,6 +109,7 @@ func DefaultConfig() *ServerConfig {
 		DiscordStart:          envBool("DISCORD_NOTIFY_START", true),
 		DiscordStop:           envBool("DISCORD_NOTIFY_STOP", true),
 		DiscordCrash:          envBool("DISCORD_NOTIFY_CRASH", true),
+		DiscordUpdate:         envBool("DISCORD_NOTIFY_UPDATE", true),
 		TZ:                    envStr("TZ", "UTC"),
 		ServerDir:             envStr("SERVER_DIR", "/home/steam/pzserver"),
 		DataDir:               envStr("DATA_DIR", "/home/steam/Zomboid"),

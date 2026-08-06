@@ -149,6 +149,37 @@ safehouse and faction options).
 See [MODS.md](MODS.md) for the full guide, including manual (non-Workshop)
 mods dropped into `<DATA_DIR>/Workshop/`.
 
+## Automatic Updates
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MOD_AUTO_UPDATE` | bool | `false` | Check Steam for workshop mod and game updates while the server runs, and restart to apply them |
+| `MOD_AUTO_UPDATE_INTERVAL` | int | `60` | Minutes between update checks |
+| `MOD_AUTO_UPDATE_ANNOUNCE` | int | `5` | In-game warning (RCON `servermsg`) this many minutes before the restart |
+| `MOD_AUTO_UPDATE_WAIT_EMPTY` | bool | `true` | Wait until no players are online before restarting |
+| `MOD_AUTO_UPDATE_WAIT_MAX` | int | `2` | Max hours to wait for an empty server, then restart anyway |
+
+With `MOD_AUTO_UPDATE=true` the entrypoint polls Steam (no API key needed)
+while the server is healthy: it compares each Workshop mod's last-modified
+time and the game app's build ID against the baseline in
+`<DATA_DIR>/update-state.json` (persisted in the data volume; the first check
+only records the baseline). When an update is found it notifies Discord (if
+configured), broadcasts an in-game warning, optionally waits for the server
+to empty, then saves the world (RCON `save` + `quit`) and exits cleanly so
+the container's restart policy re-runs the boot flow, which downloads and
+loads the new versions. The first check after an update is applied records
+the new baseline, so each update triggers exactly one restart.
+
+Mod updates are applied on the restarting boot via the Workshop download
+(`MOD_UPDATE_ON_START` is forced on while `MOD_AUTO_UPDATE` is set); without
+`STEAM_USER`/`STEAM_PASS` the running PZ server refreshes the Workshop items
+itself at startup, as it already does for new mods. Game build updates are
+applied by the existing server-file download at boot (`UPDATE_ON_START`).
+
+`MOD_AUTO_UPDATE_ANNOUNCE=0` skips the countdown and restarts as soon as the
+server is empty. Without `MOD_AUTO_UPDATE_WAIT_EMPTY` the restart happens
+immediately after the countdown regardless of players.
+
 ## Updates
 
 | Variable | Type | Default | Description |
@@ -184,6 +215,7 @@ first login; the session is remembered afterwards.
 | `DISCORD_NOTIFY_START` | bool | `true` | Notify on server start |
 | `DISCORD_NOTIFY_STOP` | bool | `true` | Notify on server stop |
 | `DISCORD_NOTIFY_CRASH` | bool | `true` | Notify on server crash |
+| `DISCORD_NOTIFY_UPDATE` | bool | `true` | Notify when an automatic restart is triggered by an update |
 
 ## Container Settings
 

@@ -282,6 +282,15 @@ func (c *ServerConfig) Validate() []string {
 	if c.BackupMaxCount < 1 {
 		errors = append(errors, "BACKUP_MAX_COUNT must be at least 1")
 	}
+	if c.AutoUpdateInterval < 1 {
+		errors = append(errors, "MOD_AUTO_UPDATE_INTERVAL must be at least 1 minute")
+	}
+	if c.AutoUpdateAnnounce < 0 {
+		errors = append(errors, "MOD_AUTO_UPDATE_ANNOUNCE must not be negative")
+	}
+	if c.AutoUpdateWaitMax < 1 {
+		errors = append(errors, "MOD_AUTO_UPDATE_WAIT_MAX must be at least 1 hour")
+	}
 	if c.MaxRam == "" || c.MinRam == "" {
 		errors = append(errors, "MAX_RAM and MIN_RAM must not be empty")
 	}

@@ -13,7 +13,8 @@ A Docker container for the Project Zomboid dedicated server. Built from the grou
 - **Healthcheck** -- RCON-based health monitoring, Docker native `HEALTHCHECK`
 - **Workshop mods** -- Auto-download mods from Steam Workshop on start
 - **Automatic backups** -- Scheduled world backups with rotation
-- **Discord webhook** -- Server start, stop, and crash notifications
+- **Auto-restart on updates** -- Detects Workshop mod and game build updates while running, warns players, and restarts to apply them (optional)
+- **Discord webhook** -- Server start, stop, crash, and update notifications
 - **All config via env vars** -- No need to edit `.ini` files manually
 - **Multi-instance** -- Run multiple servers from one compose file
 - **Go entrypoint** -- Single binary, no shell scripts, proper error handling

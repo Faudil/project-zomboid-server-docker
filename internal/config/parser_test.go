@@ -65,6 +65,8 @@ func TestValidate(t *testing.T) {
 		{"port collision", func(c *ServerConfig) { c.UDPPort = c.DefaultPort }, "distinct"},
 		{"zero players", func(c *ServerConfig) { c.MaxPlayers = 0 }, "MAX_PLAYERS"},
 		{"backup interval zero", func(c *ServerConfig) { c.BackupInterval = 0 }, "BACKUP_INTERVAL"},
+		{"auto update interval zero", func(c *ServerConfig) { c.AutoUpdateInterval = 0 }, "MOD_AUTO_UPDATE_INTERVAL"},
+		{"auto update wait max zero", func(c *ServerConfig) { c.AutoUpdateWaitMax = 0 }, "MOD_AUTO_UPDATE_WAIT_MAX"},
 		{"empty ram", func(c *ServerConfig) { c.MaxRam = "" }, "MAX_RAM"},
 	}
 	for _, tc := range cases {

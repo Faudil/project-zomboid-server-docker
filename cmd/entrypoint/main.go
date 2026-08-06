@@ -113,6 +113,14 @@ func run() error {
 	modIDs := resolveModWorkshop(cfg)
 	if len(modIDs) > 0 {
 		cfg.ModWorkshopIDs = strings.Join(modIDs, ";")
+		// With auto-update enabled every start re-checks the workshop items
+		// so a restart triggered by an update actually applies it. Re-download
+		// is incremental: unchanged items are skipped. Anonymous setups skip
+		// the steamcmd pre-download anyway and the PZ server refreshes the
+		// items itself at startup.
+		if cfg.AutoUpdate && cfg.SteamUser != "" {
+			cfg.ModUpdateOnStart = true
+		}
 		if err := downloadWorkshop(cfg, modIDs); err != nil {
 			fmt.Printf("ERROR downloading workshop mods: %v\n", err)
 		}
@@ -204,6 +212,13 @@ func run() error {
 	}()
 
 	healthSrv.SetStatus("healthy")
+
+	// Watch for workshop mod and game build updates. On an update the server
+	// is stopped cleanly and the container exits for its restart policy to
+	// re-run this boot flow, which downloads and loads the new versions.
+	if cfg.AutoUpdate {
+		go runAutoUpdater(cfg, modIDs, srv, bk, discord)
+	}
 
 	// Block until the server exits on its own (crash) or shutdown completes.
 	if err := srv.Wait(); err != nil {
