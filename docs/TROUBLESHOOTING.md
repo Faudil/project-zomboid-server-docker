@@ -134,6 +134,32 @@ If persistent, check:
 - RCON password is correct
 - Server is actually running (not stuck in startup)
 
+### Container unhealthy with "reading RCON auth response: EOF"
+
+Symptoms: the container shows `(unhealthy)`, healthcheck logs show
+`Healthcheck failed: reading RCON auth response: EOF`, and backups log
+`RCON connection failed before backup: ... EOF`. Players can still join the
+game fine.
+
+This is a **Project Zomboid server-side RCON stall**. PZ accepts at most 5
+concurrent RCON connections; exec commands (`hello`, `players`, `save`, ...)
+are answered from the game's main loop, which stalls while the server is
+paused-empty or still loading. When responses don't come, PZ's RCON client
+threads pile up and fill the 5-slot limit, after which **every new
+connection is accepted and closed instantly with no log** -- the silent EOF
+above. The stall usually clears on its own as soon as a player joins (the
+game unpauses and drains the queue); a container restart alone may not fix
+it while the server stays empty.
+
+The entrypoint's healthcheck is auth-only by design (it never sends RCON
+exec commands), so it does not feed the stall. The backup scheduler and the
+auto-update restart (`MOD_AUTO_UPDATE`) tolerate RCON being down: backups
+skip the save and still snapshot the on-disk world, and an auto-update
+restart proceeds anyway (the world is as of the last autosave).
+
+If the stall persists and you need to recover now: have a player join, or
+`docker compose restart` and keep a player online during startup.
+
 ## Docker Desktop on Windows (WSL2)
 
 SteamCMD downloads are extremely slow via WSL2 due to filesystem translation overhead. Solutions:

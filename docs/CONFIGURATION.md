@@ -170,6 +170,13 @@ the container's restart policy re-runs the boot flow, which downloads and
 loads the new versions. The first check after an update is applied records
 the new baseline, so each update triggers exactly one restart.
 
+If RCON is unreachable when the restart runs (PZ stalls RCON while the
+server is paused-empty; see
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md#container-unhealthy-with-reading-rcon-auth-response-eof)),
+the graceful save is skipped and the server is force-stopped: the world is
+as of the last autosave (`AUTOSAVE_INTERVAL`) and the update is still
+applied.
+
 Mod updates are applied on the restarting boot via the Workshop download
 (`MOD_UPDATE_ON_START` is forced on while `MOD_AUTO_UPDATE` is set); without
 `STEAM_USER`/`STEAM_PASS` the running PZ server refreshes the Workshop items

@@ -126,19 +126,28 @@ func TestRestartForUpdatesGraceful(t *testing.T) {
 	}
 }
 
-func TestRestartForUpdatesStopErrorExitsNonZero(t *testing.T) {
+func TestRestartForUpdatesStopErrorStillAppliesUpdate(t *testing.T) {
 	srv := &fakeServer{stopErr: errTest}
+	bk := &fakeBackup{}
 	done, exitCode := captureExit(t)
 
 	cfg := config.DefaultConfig()
 	cfg.AutoUpdateWaitEmpty = false
 	cfg.AutoUpdateAnnounce = 0
 
-	go restartForUpdates(cfg, []string{"111"}, false, srv, &fakeBackup{}, nil)
+	go restartForUpdates(cfg, []string{"111"}, false, srv, bk, nil)
 	<-done
 
-	if *exitCode != 1 {
-		t.Errorf("exit code = %d, want 1", *exitCode)
+	// RCON being down must not block the update: the container still exits 0
+	// (restart policy re-runs the boot flow) and the final backup still runs.
+	if *exitCode != 0 {
+		t.Errorf("exit code = %d, want 0", *exitCode)
+	}
+	if !srv.stopCalled {
+		t.Error("server Stop not called")
+	}
+	if !bk.runCalled {
+		t.Error("final backup not run")
 	}
 }
 

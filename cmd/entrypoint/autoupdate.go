@@ -94,8 +94,12 @@ func restartForUpdates(cfg *config.ServerConfig, updatedMods []string, gameUpdat
 
 	fmt.Println("Stopping server to apply updates")
 	if err := srv.Stop(); err != nil {
-		fmt.Printf("Server shutdown failed during auto-update: %v\n", err)
-		exitProcess(1)
+		// RCON is likely wedged (PZ stops answering RCON exec commands while
+		// the server is paused/empty). Manager.Stop has already force-
+		// terminated the process; the world is as of the last autosave
+		// (AUTOSAVE_INTERVAL). Restart anyway so the update is applied -
+		// better than a stuck container or an update that never lands.
+		fmt.Printf("WARNING: graceful shutdown failed during auto-update (%v); world data is as of the last autosave (AUTOSAVE_INTERVAL=%d minutes). Continuing with the update.\n", err, cfg.AutosaveInterval)
 	}
 	bk.Run() // final backup against the saved state before the update is applied
 	fmt.Println("Auto-update complete, exiting for container restart")

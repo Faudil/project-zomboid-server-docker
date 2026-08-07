@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,10 +217,19 @@ func (r *RCONClient) PlayerCount() (int, error) {
 	return ParsePlayerCount(response), nil
 }
 
+// playersHeaderRE matches the header line PZ prints for the "players"
+// command: "Players connected (N):". Player names follow, one "-Name" per
+// line (e.g. "Players connected (2):\n-Alice\n-Bob").
+var playersHeaderRE = regexp.MustCompile(`players connected \((\d+)\)`)
+
 // ParsePlayerCount turns the output of the RCON "players" command into a
-// player count. Empty output and "no players" style responses count as zero.
+// player count. PZ prints "Players connected (N):" followed by one "-Name"
+// line per player; both the header count and the dash lines are honoured,
+// and empty output or "no players" style responses count as zero. Other
+// formats (plain names, table headers) are handled as a fallback.
 func ParsePlayerCount(response string) int {
-	count := 0
+	headerN := -1
+	players := 0
 	for _, line := range strings.Split(response, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -228,13 +239,33 @@ func ParsePlayerCount(response string) int {
 		if strings.Contains(lower, "no player") || strings.Contains(lower, "nobody") {
 			return 0
 		}
-		if strings.HasPrefix(lower, "player") || strings.HasPrefix(lower, "-") ||
-			strings.HasPrefix(lower, "=") || strings.HasPrefix(lower, "name") {
+		if m := playersHeaderRE.FindStringSubmatch(lower); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				headerN = n
+			}
 			continue
 		}
-		count++
+		// "-Name" player lines; a line of only dashes is a separator.
+		if strings.HasPrefix(line, "-") {
+			if strings.Trim(line, "-") != "" {
+				players++
+			}
+			continue
+		}
+		if strings.HasPrefix(lower, "player") || strings.HasPrefix(lower, "=") ||
+			strings.HasPrefix(lower, "name") {
+			continue
+		}
+		// Legacy fallback: plain player names, one per line.
+		players++
 	}
-	return count
+	if players > 0 {
+		return players
+	}
+	if headerN >= 0 {
+		return headerN
+	}
+	return 0
 }
 
 func (r *RCONClient) Close() {

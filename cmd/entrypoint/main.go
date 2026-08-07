@@ -240,16 +240,18 @@ func runHealthcheck() {
 	}
 
 	client := server.NewRCONClient(cfg)
+	// Auth-only, on purpose: PZ only answers RCON exec commands (like "hello")
+	// from its main loop, which stalls while the server is paused or still
+	// loading. Repeated exec commands then leave stuck RCON client threads
+	// that fill PZ's 5-slot connection limit, after which every new
+	// connection is silently dropped (unhealthy container with EOF errors).
+	// A connect+auth round-trip proves the RCON responder is alive and the
+	// password is correct without ever entering the exec queue.
 	if err := client.Connect(); err != nil {
 		fmt.Printf("Healthcheck failed: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
-
-	if err := client.Ping(); err != nil {
-		fmt.Printf("Healthcheck failed: %v\n", err)
-		os.Exit(1)
-	}
 
 	fmt.Println("Healthcheck OK")
 }

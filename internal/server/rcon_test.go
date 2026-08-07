@@ -208,6 +208,13 @@ func TestParsePlayerCount(t *testing.T) {
 		{"no players lowercase", "There are no players connected", 0},
 		{"header lines skipped", "Players:\n------\nAlice\nBob", 2},
 		{"player prefix skipped", "Player Name\nAlice", 1},
+		// Real PZ output, captured live from a b42 dedicated server:
+		// "Players connected (1): \n-Iwalumm".
+		{"pz header one player", "Players connected (1): \n-Iwalumm", 1},
+		{"pz header three players", "Players connected (3):\n-Alice\n-Bob\n-Carol", 3},
+		{"pz header only", "Players connected (0):", 0},
+		{"pz header no dash list", "Players connected (2):", 2},
+		{"pz header with separators", "Players connected (2):\n--\n-Alice\n-Bob", 2},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
